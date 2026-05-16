@@ -35,8 +35,8 @@ export function createMockGeoSurgicalWasm(): GeoSurgicalWasm {
               operations: ast.operations.map((operation) => operation.action),
               mockMode: true,
             },
-            logs: ast.operations.map((operation) => `Mock WASM 已执行 ${operation.action}`),
-            warnings: ['当前为 Mock WASM 模式，真实 Rust 空间引擎尚未接入。'],
+            logs: ast.operations.map((operation) => `operation:${operation.action}`),
+            warnings: ['WASM_MOCK_MODE'],
           },
           undo: {
             available: context.fileSize <= 50 * 1024 * 1024,
@@ -58,8 +58,8 @@ export function createMockGeoSurgicalWasm(): GeoSurgicalWasm {
             operations: ast.operations.map((operation) => operation.action),
             mockMode: true,
           },
-          logs: ['已验证 Worker、AST 和执行链路。真实 Shapefile 处理需接入 Rust WASM。'],
-          warnings: ['MVP 不伪造 zip/shp 的真实空间处理结果。'],
+          logs: ['summary:shapefile_mock'],
+          warnings: ['SHAPEFILE_MOCK_MODE'],
         },
         undo: {
           available: false,

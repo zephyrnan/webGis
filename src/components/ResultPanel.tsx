@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { Download } from 'lucide-react';
+import { useI18n } from '../i18n/I18nContext';
 import type { SurgeryResult, UndoCapability } from '../types/protocol';
 import { UndoStatus } from './UndoStatus';
 
@@ -9,6 +10,7 @@ type ResultPanelProps = {
 };
 
 export function ResultPanel({ result, undo }: ResultPanelProps) {
+  const { t } = useI18n();
   const downloadUrl = useMemo(() => {
     if (result?.kind !== 'geojson' || !result.content) return null;
     return URL.createObjectURL(new Blob([JSON.stringify(result.content, null, 2)], { type: 'application/geo+json' }));
@@ -21,7 +23,7 @@ export function ResultPanel({ result, undo }: ResultPanelProps) {
   if (!result) {
     return (
       <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-500">
-        执行完成后会显示结果摘要和下载入口。
+        {t('result.empty')}
       </section>
     );
   }
@@ -29,22 +31,21 @@ export function ResultPanel({ result, undo }: ResultPanelProps) {
   return (
     <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
       <div>
-        <p className="text-xs uppercase tracking-[0.24em] text-cyan-300">Result</p>
-        <h2 className="mt-1 text-lg font-semibold text-white">{result.fileName}</h2>
+        <h2 className="text-lg font-semibold text-white">{result.fileName}</h2>
       </div>
 
       <div className="grid grid-cols-2 gap-3 text-sm">
-        <Metric label="输入要素" value={result.summary.inputFeatureCount ?? '未知'} />
-        <Metric label="输出要素" value={result.summary.outputFeatureCount ?? '未知'} />
-        <Metric label="Mock 模式" value={result.summary.mockMode ? '是' : '否'} />
-        <Metric label="操作数" value={result.summary.operations.length} />
+        <Metric label={t('result.inputFeatures')} value={result.summary.inputFeatureCount ?? t('metadata.unknown')} />
+        <Metric label={t('result.outputFeatures')} value={result.summary.outputFeatureCount ?? t('metadata.unknown')} />
+        <Metric label={t('result.mockMode')} value={result.summary.mockMode ? t('result.yes') : t('result.no')} />
+        <Metric label={t('result.operations')} value={result.summary.operations.length} />
       </div>
 
       <UndoStatus undo={undo} />
 
       <div className="space-y-2 text-sm text-slate-300">
-        {result.logs.map((log) => <p key={log} className="rounded-xl bg-slate-950/70 p-3">{log}</p>)}
-        {result.warnings.map((warning) => <p key={warning} className="rounded-xl bg-amber-950/30 p-3 text-amber-100">{warning}</p>)}
+        {result.logs.map((log) => <p key={log} className="rounded-xl bg-slate-950/70 p-3">{formatResultLog(log, t)}</p>)}
+        {result.warnings.map((warning) => <p key={warning} className="rounded-xl bg-amber-950/30 p-3 text-amber-100">{formatResultWarning(warning, t)}</p>)}
       </div>
 
       {downloadUrl ? (
@@ -54,11 +55,29 @@ export function ResultPanel({ result, undo }: ResultPanelProps) {
           href={downloadUrl}
         >
           <Download className="size-4" />
-          下载 GeoJSON
+          {t('result.download')}
         </a>
       ) : null}
     </section>
   );
+}
+
+function formatResultLog(log: string, t: (key: string, params?: Record<string, string | number>) => string) {
+  if (log.startsWith('operation:')) {
+    return t('log.operation', { operation: log.slice('operation:'.length) });
+  }
+
+  if (log === 'summary:shapefile_mock') {
+    return t('log.shapefileMock');
+  }
+
+  return log;
+}
+
+function formatResultWarning(warning: string, t: (key: string) => string) {
+  const key = `warning.${warning}`;
+  const value = t(key);
+  return value === key ? warning : value;
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {

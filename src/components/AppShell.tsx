@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useI18n } from '../i18n/I18nContext';
 import type { GeoSurgicalAst } from '../types/ast';
 import type { StructuredError } from '../types/protocol';
 import { buildShortcutTags } from '../services/shortcutTags';
@@ -14,25 +15,44 @@ import { ResultPanel } from './ResultPanel';
 import { ShortcutTags } from './ShortcutTags';
 
 export function AppShell() {
+  const { language, setLanguage, t } = useI18n();
   const worker = useGeoSurgicalWorker();
   const [command, setCommand] = useState('');
   const [localError, setLocalError] = useState<StructuredError | null>(null);
   const [ast, setAst] = useState<GeoSurgicalAst | null>(null);
   const [risks, setRisks] = useState<string[]>([]);
-  const shortcutTags = useMemo(() => worker.metadata ? buildShortcutTags(worker.metadata) : [], [worker.metadata]);
+  const shortcutTags = useMemo(
+    () => worker.metadata ? buildShortcutTags(worker.metadata, language) : [],
+    [worker.metadata, language],
+  );
   const error = localError ?? worker.error;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-6 py-8">
         <header className="rounded-[2rem] border border-cyan-400/20 bg-gradient-to-br from-slate-900 to-cyan-950/40 p-8 shadow-2xl shadow-cyan-950/20">
-          <p className="text-xs uppercase tracking-[0.36em] text-cyan-300">GeoSurgical</p>
-          <h1 className="mt-3 max-w-4xl text-4xl font-bold tracking-tight text-white md:text-5xl">
-            面向空间数据的语言驱动手术台
-          </h1>
-          <p className="mt-4 max-w-3xl text-slate-300">
-            MVP 已把文件生命周期隔离到 Worker：React 主线程只负责接待和调度，不拆包、不解析 GIS 二进制、不把真实坐标交给 Brain。
-          </p>
+          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h1 className="max-w-4xl text-4xl font-bold tracking-tight text-white md:text-5xl">
+                {t('app.title')}
+              </h1>
+              <p className="mt-4 max-w-3xl text-slate-300">
+                {t('app.subtitle')}
+              </p>
+            </div>
+            <div className="inline-flex rounded-full border border-slate-700 bg-slate-950/70 p-1 text-sm">
+              {(['zh', 'en'] as const).map((item) => (
+                <button
+                  key={item}
+                  className={`rounded-full px-3 py-1.5 transition ${language === item ? 'bg-cyan-400 text-slate-950' : 'text-slate-300 hover:text-white'}`}
+                  type="button"
+                  onClick={() => setLanguage(item)}
+                >
+                  {t(item === 'zh' ? 'language.zh' : 'language.en')}
+                </button>
+              ))}
+            </div>
+          </div>
         </header>
 
         <div className="grid gap-6 xl:grid-cols-[360px_minmax(420px,1fr)_520px]">

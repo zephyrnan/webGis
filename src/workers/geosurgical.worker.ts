@@ -34,7 +34,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       post({
         type: 'PROGRESS',
         taskId: request.taskId,
-        progress: { phase: 'executing', message: '任务已取消。', percent: 0 },
+        progress: { phase: 'executing', message: '任务已取消。', messageKey: 'progress.cancelled', percent: 0 },
       });
       return;
     }
@@ -69,7 +69,7 @@ async function handleUpload(request: Extract<WorkerRequest, { type: 'UPLOAD_FILE
   post({
     type: 'PROGRESS',
     taskId: request.taskId,
-    progress: { phase: 'metadata', message: 'Worker 已接管文件 buffer，开始元数据分诊。', percent: 15 },
+    progress: { phase: 'metadata', message: 'Worker 已接管文件 buffer，开始元数据分诊。', messageKey: 'progress.metadataStart', percent: 15 },
   });
 
   const context = requireContext(request.taskId);
@@ -83,7 +83,7 @@ async function handleUpload(request: Extract<WorkerRequest, { type: 'UPLOAD_FILE
   post({
     type: 'PROGRESS',
     taskId: request.taskId,
-    progress: { phase: 'metadata', message: 'Metadata Dry Run 完成。', percent: 100 },
+    progress: { phase: 'metadata', message: 'Metadata Dry Run 完成。', messageKey: 'progress.metadataDone', percent: 100 },
   });
   post({ type: 'METADATA_READY', taskId: request.taskId, metadata });
 }
@@ -98,7 +98,7 @@ async function handleExecute(request: Extract<WorkerRequest, { type: 'EXECUTE_AS
   post({
     type: 'PROGRESS',
     taskId: request.taskId,
-    progress: { phase: 'executing', message: '开始执行 GeoSurgical AST。', percent: 10 },
+    progress: { phase: 'executing', message: '开始执行 GeoSurgical AST。', messageKey: 'progress.executeStart', percent: 10 },
   });
 
   for (let index = 0; index < request.ast.operations.length; index += 1) {
@@ -112,6 +112,8 @@ async function handleExecute(request: Extract<WorkerRequest, { type: 'EXECUTE_AS
       progress: {
         phase: 'executing',
         message: `正在执行 ${request.ast.operations[index].action}`,
+        messageKey: 'progress.executingOperation',
+        params: { operation: request.ast.operations[index].action },
         percent: Math.round(20 + (index / request.ast.operations.length) * 60),
         operationIndex: index,
       },
@@ -128,7 +130,7 @@ async function handleExecute(request: Extract<WorkerRequest, { type: 'EXECUTE_AS
   post({
     type: 'PROGRESS',
     taskId: request.taskId,
-    progress: { phase: 'exporting', message: '结果已生成，准备回传主线程。', percent: 100 },
+    progress: { phase: 'exporting', message: '结果已生成，准备回传主线程。', messageKey: 'progress.exportReady', percent: 100 },
   });
   post({ type: 'RESULT_READY', taskId: request.taskId, result: envelope.result, undo: envelope.undo });
 }

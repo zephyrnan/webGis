@@ -1,4 +1,5 @@
 import { UploadCloud } from 'lucide-react';
+import { useI18n } from '../i18n/I18nContext';
 import { isSupportedGisFile, SUPPORTED_EXTENSIONS } from '../services/fileGuards';
 import type { StructuredError } from '../types/protocol';
 
@@ -9,6 +10,8 @@ type DropzoneProps = {
 };
 
 export function Dropzone({ disabled, onFile, onError }: DropzoneProps) {
+  const { language, t } = useI18n();
+
   const handleFiles = (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
@@ -16,7 +19,9 @@ export function Dropzone({ disabled, onFile, onError }: DropzoneProps) {
     if (!isSupportedGisFile(file.name)) {
       onError({
         code: 'UNSUPPORTED_FILE_TYPE',
-        message: `暂不支持 ${file.name}，请上传 ${SUPPORTED_EXTENSIONS.join(' / ')}。`,
+        message: language === 'zh'
+          ? `暂不支持 ${file.name}，请上传 ${SUPPORTED_EXTENSIONS.join(' / ')}。`
+          : `${file.name} is not supported. Upload ${SUPPORTED_EXTENSIONS.join(' / ')} instead.`,
         recoverable: true,
       });
       return;
@@ -35,8 +40,8 @@ export function Dropzone({ disabled, onFile, onError }: DropzoneProps) {
       }}
     >
       <UploadCloud className="mb-4 size-10 text-cyan-300" />
-      <span className="text-lg font-semibold text-white">拖拽 GIS 文件到这里</span>
-      <span className="mt-2 text-sm text-slate-400">支持 .geojson / .json / .zip / .shp，主线程只接收并转交 Worker。</span>
+      <span className="text-lg font-semibold text-white">{t('dropzone.title')}</span>
+      <span className="mt-2 text-sm text-slate-400">{t('dropzone.subtitle')}</span>
       <input
         className="hidden"
         disabled={disabled}

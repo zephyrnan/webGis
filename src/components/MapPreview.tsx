@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useI18n } from '../i18n/I18nContext';
 import Map from 'ol/Map';
 import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
@@ -15,6 +16,7 @@ type MapPreviewProps = {
 };
 
 export function MapPreview({ result }: MapPreviewProps) {
+  const { t } = useI18n();
   const targetRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const vectorLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
@@ -72,9 +74,8 @@ export function MapPreview({ result }: MapPreviewProps) {
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70">
       <div className="border-b border-slate-800 p-5">
-        <p className="text-xs uppercase tracking-[0.24em] text-cyan-300">OpenLayers Preview</p>
-        <h2 className="mt-1 text-lg font-semibold text-white">结果审阅</h2>
-        {result?.kind === 'summary' ? <p className="mt-2 text-sm text-amber-200">{result.warnings[0]}</p> : null}
+        <h2 className="text-lg font-semibold text-white">{t('map.title')}</h2>
+        {result?.kind === 'summary' ? <p className="mt-2 text-sm text-amber-200">{t(`warning.${result.warnings[0]}`) === `warning.${result.warnings[0]}` ? result.warnings[0] : t(`warning.${result.warnings[0]}`)}</p> : null}
       </div>
       <div ref={targetRef} className="h-[420px] bg-slate-950" />
     </section>

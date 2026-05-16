@@ -70,11 +70,11 @@ export function validateAst(ast: unknown, metadata: GeoSurgicalMetadata): Valida
     }
 
     if (operation.action === 'drop_empty' || operation.action === 'filter_area') {
-      risks.push('删除或过滤要素会改变数据集，需要确认后执行。');
+      risks.push('ast.risk');
     }
 
     if (operation.action === 'transform_crs') {
-      risks.push('坐标转换可能不可逆，需要确认目标坐标系。');
+      risks.push('ast.riskTransform');
     }
   }
 

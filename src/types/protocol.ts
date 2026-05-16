@@ -8,6 +8,8 @@ export type ProgressPhase = 'metadata' | 'planning' | 'validating' | 'executing'
 export type ProgressEvent = {
   phase: ProgressPhase;
   message: string;
+  messageKey?: string;
+  params?: Record<string, string | number>;
   percent?: number;
   operationIndex?: number;
 };

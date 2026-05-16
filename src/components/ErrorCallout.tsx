@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react';
+import { useI18n } from '../i18n/I18nContext';
 import type { StructuredError } from '../types/protocol';
 
 type ErrorCalloutProps = {
@@ -6,7 +7,12 @@ type ErrorCalloutProps = {
 };
 
 export function ErrorCallout({ error }: ErrorCalloutProps) {
+  const { t } = useI18n();
+
   if (!error) return null;
+
+  const errorKey = `error.${error.code}`;
+  const message = t(errorKey) === errorKey ? error.message : t(errorKey);
 
   return (
     <div className="rounded-2xl border border-amber-400/40 bg-amber-950/40 p-4 text-sm text-amber-100">
@@ -14,9 +20,9 @@ export function ErrorCallout({ error }: ErrorCalloutProps) {
         <AlertTriangle className="size-4" />
         {error.code}
       </div>
-      <p className="mt-2 text-amber-50/90">{error.message}</p>
+      <p className="mt-2 text-amber-50/90">{message}</p>
       {error.suggestedUserInput ? (
-        <p className="mt-2 rounded-xl bg-black/20 p-2 text-amber-50">建议输入：{error.suggestedUserInput}</p>
+        <p className="mt-2 rounded-xl bg-black/20 p-2 text-amber-50">{t('error.suggestion')} {error.suggestedUserInput}</p>
       ) : null}
     </div>
   );

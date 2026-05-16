@@ -16,7 +16,7 @@ const metadata: GeoSurgicalMetadata = {
 };
 
 describe('MockBrainGateway', () => {
-  it('turns natural language into a safe AST', async () => {
+  it('turns Chinese natural language into a safe AST', async () => {
     const ast = await new MockBrainGateway().plan({
       command: '删除 name 为空的要素，然后导出 GeoJSON',
       metadata,
@@ -27,5 +27,28 @@ describe('MockBrainGateway', () => {
       { action: 'drop_empty', field: 'name' },
       { action: 'export', format: 'geojson' },
     ]);
+  });
+
+  it('turns English natural language into a safe AST', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: 'Remove features where name is empty, then export GeoJSON',
+      metadata,
+      schemaVersion: '1.0',
+    });
+
+    expect(ast.operations).toEqual([
+      { action: 'drop_empty', field: 'name' },
+      { action: 'export', format: 'geojson' },
+    ]);
+  });
+
+  it('recognizes English CRS conversion commands', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: 'Convert EPSG:4326 to GCJ-02 and export GeoJSON',
+      metadata,
+      schemaVersion: '1.0',
+    });
+
+    expect(ast.operations).toContainEqual({ action: 'transform_crs', from: 'EPSG:4326', to: 'GCJ-02' });
   });
 });

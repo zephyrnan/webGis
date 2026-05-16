@@ -43,17 +43,17 @@ export class MockBrainGateway implements BrainGateway {
       operations.push({
         action: 'filter_area',
         field: 'area',
-        operator: normalized.includes('小于') || normalized.includes('<') ? '>' : '>=',
+        operator: mentionsLessThan(normalized) ? '>' : '>=',
         value: normalized.includes('10') ? 10 : 0,
       });
     }
 
-    if (normalized.includes('name') && (normalized.includes('空') || normalized.includes('为空'))) {
+    if (mentionsEmptyName(normalized)) {
       assertField(fieldNames, 'name');
       operations.push({ action: 'drop_empty', field: 'name' });
     }
 
-    if (normalized.includes('火星') || normalized.includes('gcj')) {
+    if (mentionsCrsTransform(normalized)) {
       operations.push({
         action: 'transform_crs',
         from: input.metadata.crs ?? 'EPSG:4326',
@@ -61,7 +61,7 @@ export class MockBrainGateway implements BrainGateway {
       });
     }
 
-    if (normalized.includes('导出') || normalized.includes('geojson') || operations.length > 0) {
+    if (mentionsExport(normalized) || operations.length > 0) {
       operations.push({ action: 'export', format: 'geojson' });
     }
 
@@ -80,6 +80,32 @@ export class MockBrainGateway implements BrainGateway {
 
 function mentionsArea(command: string) {
   return command.includes('area') || command.includes('面积');
+}
+
+function mentionsLessThan(command: string) {
+  return command.includes('小于') || command.includes('<') || command.includes('less than') || command.includes('below');
+}
+
+function mentionsEmptyName(command: string) {
+  return command.includes('name') && (
+    command.includes('空')
+    || command.includes('为空')
+    || command.includes('empty')
+    || command.includes('blank')
+    || command.includes('null')
+  );
+}
+
+function mentionsCrsTransform(command: string) {
+  return command.includes('火星')
+    || command.includes('gcj')
+    || command.includes('mars coordinate')
+    || command.includes('convert')
+    || command.includes('transform');
+}
+
+function mentionsExport(command: string) {
+  return command.includes('导出') || command.includes('geojson') || command.includes('export') || command.includes('download');
 }
 
 function assertField(fieldNames: Set<string>, field: string) {
