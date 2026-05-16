@@ -1,0 +1,15 @@
+{
+  "name": "geosurgical-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "geosurgical_wasm_bg.wasm",
+    "geosurgical_wasm.js",
+    "geosurgical_wasm.d.ts"
+  ],
+  "main": "geosurgical_wasm.js",
+  "types": "geosurgical_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

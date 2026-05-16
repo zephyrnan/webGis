@@ -2,6 +2,7 @@ export type GeoOperationAction =
   | 'filter_area'
   | 'drop_empty'
   | 'transform_crs'
+  | 'fix_encoding'
   | 'rename_field'
   | 'export'
   | 'noop';
@@ -24,6 +25,12 @@ export type TransformCrsOperation = {
   to: 'GCJ-02' | 'EPSG:4326' | 'EPSG:3857';
 };
 
+export type FixEncodingOperation = {
+  action: 'fix_encoding';
+  from: string;
+  to: 'utf-8';
+};
+
 export type RenameFieldOperation = {
   action: 'rename_field';
   from: string;
@@ -44,6 +51,7 @@ export type GeoSurgicalOperation =
   | FilterAreaOperation
   | DropEmptyOperation
   | TransformCrsOperation
+  | FixEncodingOperation
   | RenameFieldOperation
   | ExportOperation
   | NoopOperation;

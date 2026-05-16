@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Play, Sparkles } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import { BrainPlanningError, defaultBrainGateway } from '../services/brain';
+import type { BrainGateway } from '../services/brain';
 import { validateAst } from '../services/astValidation';
 import type { GeoSurgicalAst } from '../types/ast';
 import type { GeoSurgicalMetadata } from '../types/metadata';
@@ -11,6 +12,7 @@ type CommandPaletteProps = {
   metadata: GeoSurgicalMetadata | null;
   disabled?: boolean;
   command: string;
+  brainGateway?: BrainGateway;
   onCommandChange(command: string): void;
   onAstReady(ast: GeoSurgicalAst | null, risks: string[]): void;
   onExecute(ast: GeoSurgicalAst): void;
@@ -21,6 +23,7 @@ export function CommandPalette({
   metadata,
   disabled,
   command,
+  brainGateway,
   onCommandChange,
   onAstReady,
   onExecute,
@@ -30,15 +33,18 @@ export function CommandPalette({
   const [plannedAst, setPlannedAst] = useState<GeoSurgicalAst | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [risks, setRisks] = useState<string[]>([]);
+  const [isPlanning, setIsPlanning] = useState(false);
 
-  const canPlan = Boolean(metadata && command.trim()) && !disabled;
+  const gateway = brainGateway ?? defaultBrainGateway;
+  const canPlan = Boolean(metadata && command.trim()) && !disabled && !isPlanning;
 
   const planCommand = async () => {
     if (!metadata) return;
 
     try {
+      setIsPlanning(true);
       onError(null);
-      const ast = await defaultBrainGateway.plan({ command, metadata, schemaVersion: '1.0' });
+      const ast = await gateway.plan({ command, metadata, schemaVersion: '1.0' });
       const validation = validateAst(ast, metadata);
 
       if (!validation.ok) {
@@ -61,6 +67,8 @@ export function CommandPalette({
       setRisks([]);
       onAstReady(null, []);
       onError(structuredError);
+    } finally {
+      setIsPlanning(false);
     }
   };
 
@@ -84,8 +92,8 @@ export function CommandPalette({
           type="button"
           onClick={planCommand}
         >
-          <Sparkles className="size-4" />
-          {t('command.generateAst')}
+          <Sparkles className={`size-4 ${isPlanning ? 'animate-spin' : ''}`} />
+          {isPlanning ? t('command.planning') : t('command.generateAst')}
         </button>
         <button
           className="inline-flex items-center gap-2 rounded-full border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-cyan-300 disabled:cursor-not-allowed disabled:text-slate-600"

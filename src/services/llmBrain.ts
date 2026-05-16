@@ -1,0 +1,336 @@
+import type { GeoSurgicalAst } from '../types/ast';
+import type { GeoSurgicalMetadata } from '../types/metadata';
+import type { BrainGateway } from './brain';
+import { BrainPlanningError } from './brain';
+
+const SYSTEM_PROMPT = `You are a REST API that outputs ONLY raw JSON. Do NOT wrap the JSON in markdown blocks (like \`\`\`json). Do NOT add any conversational text before or after the JSON. Your output must start with '{' and end with '}'.
+
+你是 GeoSurgical 编译器。你的唯一职责是将用户的自然语言指令翻译为 GeoSurgical AST JSON。
+
+## 输出格式
+你必须且只能输出一个合法的 JSON 对象，格式如下：
+{
+  "version": "1.0",
+  "operations": [...]
+}
+
+严禁输出解释、markdown、代码块标记、自然语言寒暄或任何 JSON 之外的字符。
+
+## 可用 actions
+- filter_area: 按数值字段过滤要素。参数: field, operator(>=/>/<=/</=), value
+- drop_empty: 删除指定字段为空的要素。参数: field
+- rename_field: 重命名字段。参数: from, to
+- transform_crs: 坐标系转换。参数: from, to (支持 GCJ-02, EPSG:4326, EPSG:3857)
+- fix_encoding: 编码重构。参数 schema: {"action":"fix_encoding","from":"推测的原始编码","to":"utf-8"}
+- export: 导出结果。参数: format (目前只支持 geojson)
+- noop: 无法执行时的占位符。参数: reason
+
+## 约束
+1. 只使用 Metadata 中提供的字段名。如果用户提到的字段不在 Metadata 中，使用 noop action 并在 reason 中说明。
+2. 不要假设或编造字段名。
+3. 如果 Metadata 标记了 truncated: true，不要假设截断后的字段存在。
+4. 每个指令集末尾通常需要一个 export 操作。
+5. 如果用户指令完全无法理解，返回 {"version":"1.0","operations":[{"action":"noop","reason":"无法理解指令"}]}。
+6. transform_crs 必须同时包含 from 和 to，例如 {"action":"transform_crs","from":"EPSG:4326","to":"GCJ-02"}。
+7. drop_empty 必须包含 field；filter_area 必须包含 field、operator、value；rename_field 必须包含 from、to。
+8. 如果检测到原始数据的 CRS 已经是 EPSG:4326，且用户没有明确要求转换到其他坐标系，绝对禁止生成 transform_crs 指令，不要写废话。
+9. 遇到乱码必须使用 fix_encoding，绝对禁止返回 noop。
+10. 如果用户只是要求“输出 WGS84 / 保持 WGS84 / 导出 WGS84”，且 Metadata CRS 已经是 EPSG:4326，只生成 export，不生成 EPSG:4326 到 EPSG:4326 的 transform_crs。
+
+### 正确指令示例（当用户要求修复 Windows-1256 乱码并输出 WGS84 时）：
+{
+  "version": "1.0",
+  "operations": [
+    { "action": "fix_encoding", "from": "windows-1256", "to": "utf-8" },
+    { "action": "export", "format": "geojson" }
+  ]
+}`;
+
+export interface LlmBrainConfig {
+  endpoint: string;
+  apiKey?: string;
+  model: string;
+  temperature?: number;
+}
+
+const DEFAULT_CONFIG: LlmBrainConfig = {
+  endpoint: 'http://localhost:11434',
+  model: 'qwen2.5:7b',
+  temperature: 0.1,
+};
+
+export class LlmBrainGateway implements BrainGateway {
+  private config: LlmBrainConfig;
+
+  constructor(config: Partial<LlmBrainConfig> = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  async plan(input: {
+    command: string;
+    metadata: GeoSurgicalMetadata;
+    schemaVersion: '1.0';
+  }): Promise<GeoSurgicalAst> {
+    const normalized = input.command.trim().toLowerCase();
+
+    if (!normalized) {
+      throw new BrainPlanningError({
+        code: 'EMPTY_COMMAND',
+        message: '请输入要执行的空间处理需求。',
+        recoverable: true,
+      });
+    }
+
+    const metadataSummary = this.buildMetadataSummary(input.metadata);
+    const userMessage = `用户指令: ${input.command}\n\n文件 Metadata:\n${metadataSummary}`;
+
+    try {
+      const response = await this.callLlm(userMessage);
+      const ast = this.parseResponse(response);
+      return ast;
+    } catch (error) {
+      if (error instanceof BrainPlanningError) throw error;
+      throw new BrainPlanningError({
+        code: 'LLM_CALL_FAILED',
+        message: `调用大模型失败: ${error instanceof Error ? error.message : '未知错误'}`,
+        recoverable: true,
+        suggestedUserInput: '请检查本地 Ollama 服务是否运行，或尝试使用 Mock 模式。',
+      });
+    }
+  }
+
+  private buildMetadataSummary(metadata: GeoSurgicalMetadata): string {
+    const lines: string[] = [
+      `文件类型: ${metadata.fileType}`,
+      `文件名: ${metadata.fileName}`,
+      `要素数量: ${metadata.featureCountEstimate ?? '未知'}`,
+      `坐标系: ${metadata.crs ?? '未知'}`,
+    ];
+
+    if (metadata.bbox) {
+      lines.push(`BBox: [${metadata.bbox.join(', ')}]`);
+    }
+
+    lines.push(`字段总数: ${metadata.fieldPolicy.totalFieldCount}`);
+    if (metadata.fieldPolicy.truncated) {
+      lines.push(`字段已截断: 显示前 ${metadata.fieldPolicy.includedFieldCount} 个`);
+    }
+
+    lines.push('\n字段列表:');
+    for (const field of metadata.fields) {
+      const sampleStr = field.sample?.length
+        ? ` (示例: ${field.sample.slice(0, 3).map(v => JSON.stringify(v)).join(', ')})`
+        : '';
+      lines.push(`  - ${field.name}: ${field.type}${sampleStr}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private async callLlm(userMessage: string): Promise<string> {
+    const { endpoint, apiKey, model, temperature } = this.config;
+
+    const isOpenAiFormat = endpoint.includes('api.openai.com')
+      || endpoint.includes('deepseek')
+      || endpoint.includes('openai')
+      || endpoint.includes('modelscope')
+      || !endpoint.includes('localhost');
+
+    if (isOpenAiFormat) {
+      return this.callOpenAiFormat(endpoint, apiKey, model, temperature, userMessage);
+    }
+
+    // Default: Ollama format
+    return this.callOllama(endpoint, model, temperature, userMessage);
+  }
+
+  private async callOllama(endpoint: string, model: string, temperature: number | undefined, userMessage: string): Promise<string> {
+    const response = await fetch(`${endpoint}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userMessage },
+        ],
+        stream: false,
+        format: 'json',
+        options: { temperature: temperature ?? 0.1 },
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Ollama API 返回 ${response.status}: ${text}`);
+    }
+
+    const data = await response.json() as { message?: { content?: string } };
+    return data.message?.content ?? '';
+  }
+
+  private async callOpenAiFormat(endpoint: string, apiKey: string | undefined, model: string, temperature: number | undefined, userMessage: string): Promise<string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+    const response = await fetch(`${endpoint}/v1/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userMessage },
+        ],
+        temperature: temperature ?? 0.1,
+        stream: false,
+        response_format: { type: 'json_object' },
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`OpenAI API 返回 ${response.status}: ${text}`);
+    }
+
+    const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    return data.choices?.[0]?.message?.content ?? '';
+  }
+
+  private parseResponse(response: string): GeoSurgicalAst {
+    const cleaned = this.extractJsonObject(response);
+
+    try {
+      const parsed = JSON.parse(cleaned) as unknown;
+      const ast = this.normalizeAst(parsed);
+
+      if (!ast.version || !Array.isArray(ast.operations)) {
+        throw new BrainPlanningError({
+          code: 'INVALID_AST_FORMAT',
+          message: '大模型返回的 JSON 格式不符合 AST 规范。',
+          recoverable: true,
+        });
+      }
+
+      return ast;
+    } catch (error) {
+      if (error instanceof BrainPlanningError) throw error;
+      console.error('LLM 返回的不是合法 JSON:', response);
+      throw new BrainPlanningError({
+        code: 'LLM_JSON_PARSE_ERROR',
+        message: `大模型返回的内容不是合法 JSON: ${error instanceof Error ? error.message : '未知错误'}`,
+        recoverable: true,
+        suggestedUserInput: '请尝试重新生成，或简化指令。',
+      });
+    }
+  }
+
+  private normalizeAst(parsed: unknown): GeoSurgicalAst {
+    const value = parsed as Partial<GeoSurgicalAst> & { operations?: unknown };
+    const operations = Array.isArray(value.operations)
+      ? value.operations.map((operation) => this.normalizeOperation(operation))
+      : [];
+
+    return {
+      version: value.version === '1.0' ? '1.0' : '1.0',
+      operations,
+    };
+  }
+
+  private normalizeOperation(operation: unknown): GeoSurgicalAst['operations'][number] {
+    const op = operation as Record<string, unknown>;
+    const action = String(op.action ?? '').trim();
+
+    if (action === 'transform_crs') {
+      return {
+        action: 'transform_crs',
+        from: typeof op.from === 'string' && op.from ? op.from : 'EPSG:4326',
+        to: op.to === 'EPSG:3857' || op.to === 'EPSG:4326' || op.to === 'GCJ-02' ? op.to : 'GCJ-02',
+      };
+    }
+
+    if (action === 'fix_encoding') {
+      return {
+        action: 'fix_encoding',
+        from: typeof op.from === 'string' && op.from ? op.from : 'unknown',
+        to: 'utf-8',
+      };
+    }
+
+    if (action === 'filter_area') {
+      return {
+        action: 'filter_area',
+        field: typeof op.field === 'string' && op.field ? op.field : 'area',
+        operator: op.operator === '>' || op.operator === '<' || op.operator === '<=' || op.operator === '=' ? op.operator : '>=',
+        value: typeof op.value === 'number' ? op.value : Number(op.value ?? 0),
+      };
+    }
+
+    if (action === 'drop_empty') {
+      return {
+        action: 'drop_empty',
+        field: typeof op.field === 'string' && op.field ? op.field : 'name',
+      };
+    }
+
+    if (action === 'rename_field') {
+      return {
+        action: 'rename_field',
+        from: typeof op.from === 'string' ? op.from : '',
+        to: typeof op.to === 'string' ? op.to : '',
+      };
+    }
+
+    if (action === 'export') {
+      return { action: 'export', format: 'geojson' };
+    }
+
+    return {
+      action: 'noop',
+      reason: typeof op.reason === 'string' && op.reason ? op.reason : `不支持或无法归一化的 action: ${action || 'unknown'}`,
+    };
+  }
+
+  private extractJsonObject(rawText: string): string {
+    let cleanText = rawText
+      .trim()
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim();
+
+    const startIndex = cleanText.indexOf('{');
+    const endIndex = cleanText.lastIndexOf('}');
+
+    if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
+      throw new BrainPlanningError({
+        code: 'LLM_JSON_PARSE_ERROR',
+        message: '大模型返回内容中没有找到 JSON 对象。',
+        recoverable: true,
+        suggestedUserInput: '请重新生成 AST，或简化指令。',
+      });
+    }
+
+    cleanText = cleanText.slice(startIndex, endIndex + 1).trim();
+
+    if (!cleanText.startsWith('{') || !cleanText.endsWith('}')) {
+      throw new BrainPlanningError({
+        code: 'LLM_JSON_PARSE_ERROR',
+        message: '大模型返回内容无法提取为完整 JSON 对象。',
+        recoverable: true,
+        suggestedUserInput: '请重新生成 AST，或切换 Mock 模式。',
+      });
+    }
+
+    return cleanText;
+  }
+}
+
+export function createBrainGateway(config: Partial<LlmBrainConfig> & { mode?: 'llm' | 'mock' } = {}) {
+  const { mode, ...llmConfig } = config;
+
+  if (mode === 'mock') {
+    return null; // Will use defaultBrainGateway
+  }
+
+  return new LlmBrainGateway(llmConfig);
+}

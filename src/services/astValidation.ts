@@ -20,6 +20,11 @@ const operationSchema = z.discriminatedUnion('action', [
     to: z.enum(['GCJ-02', 'EPSG:4326', 'EPSG:3857']),
   }),
   z.object({
+    action: z.literal('fix_encoding'),
+    from: z.string().min(1),
+    to: z.literal('utf-8'),
+  }),
+  z.object({
     action: z.literal('rename_field'),
     from: z.string().min(1),
     to: z.string().min(1),
@@ -51,7 +56,7 @@ export function validateAst(ast: unknown, metadata: GeoSurgicalMetadata): Valida
       ok: false,
       error: {
         code: 'AST_SCHEMA_INVALID',
-        message: parsed.error.issues[0]?.message ?? 'AST 格式不正确。',
+        message: formatZodIssue(parsed.error.issues[0]) ?? 'AST 格式不正确。',
         recoverable: true,
       },
     };
@@ -79,6 +84,13 @@ export function validateAst(ast: unknown, metadata: GeoSurgicalMetadata): Valida
   }
 
   return { ok: true, ast: parsed.data, risks };
+}
+
+function formatZodIssue(issue: z.core.$ZodIssue | undefined) {
+  if (!issue) return null;
+
+  const path = issue.path.length ? issue.path.join('.') : 'AST';
+  return `${path}: ${issue.message}`;
 }
 
 function missingField(field: string): ValidationResult {

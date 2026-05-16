@@ -260,6 +260,10 @@ function applyOperation(features: GeoJSON.Feature[], operation: GeoSurgicalOpera
     });
   }
 
+  if (operation.action === 'fix_encoding') {
+    return features;
+  }
+
   return features;
 }
 

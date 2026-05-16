@@ -3,6 +3,8 @@ import { useI18n } from '../i18n/I18nContext';
 import type { GeoSurgicalAst } from '../types/ast';
 import type { StructuredError } from '../types/protocol';
 import { buildShortcutTags } from '../services/shortcutTags';
+import { LlmBrainGateway } from '../services/llmBrain';
+import type { BrainGateway } from '../services/brain';
 import { useGeoSurgicalWorker } from '../hooks/useGeoSurgicalWorker';
 import { AstPreview } from './AstPreview';
 import { CommandPalette } from './CommandPalette';
@@ -13,6 +15,15 @@ import { MetadataPanel } from './MetadataPanel';
 import { ProgressTimeline } from './ProgressTimeline';
 import { ResultPanel } from './ResultPanel';
 import { ShortcutTags } from './ShortcutTags';
+
+const llmEndpoint = import.meta.env.VITE_LLM_ENDPOINT as string | undefined;
+const llmApiKey = import.meta.env.VITE_LLM_API_KEY as string | undefined;
+const llmModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
+const brainMode = import.meta.env.VITE_BRAIN_MODE as string | undefined;
+
+const brainGateway: BrainGateway | undefined = brainMode !== 'mock' && llmEndpoint
+  ? new LlmBrainGateway({ endpoint: llmEndpoint, apiKey: llmApiKey, model: llmModel ?? 'qwen2.5:7b' })
+  : undefined;
 
 export function AppShell() {
   const { language, setLanguage, t } = useI18n();
@@ -77,6 +88,7 @@ export function AppShell() {
               command={command}
               disabled={worker.status === 'executing'}
               metadata={worker.metadata}
+              brainGateway={brainGateway}
               onAstReady={(nextAst, nextRisks) => {
                 setAst(nextAst);
                 setRisks(nextRisks);

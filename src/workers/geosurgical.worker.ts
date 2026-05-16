@@ -1,9 +1,11 @@
 import { createMockGeoSurgicalWasm } from '../wasm/geosurgicalMock';
 import { decodeSurgeryEnvelope } from '../wasm/geosurgicalWasm';
+import type { GeoSurgicalWasm } from '../wasm/geosurgicalWasm';
 import type { GeoSurgicalMetadata } from '../types/metadata';
-import type { WorkerRequest, WorkerResponse } from '../types/protocol';
+import type { WorkerRequest, WorkerResponse, ProgressEvent } from '../types/protocol';
 
-const wasm = createMockGeoSurgicalWasm();
+let wasm: GeoSurgicalWasm;
+let wasmMode: 'real' | 'mock' = 'mock';
 
 const taskContexts = new Map<string, {
   taskId: string;
@@ -14,10 +16,23 @@ const taskContexts = new Map<string, {
   cancelled: boolean;
 }>();
 
+const wasmReady = (async () => {
+  try {
+    const { createRealGeoSurgicalWasm } = await import('../wasm/geosurgicalRealWasm');
+    wasm = createRealGeoSurgicalWasm();
+    wasmMode = 'real';
+  } catch {
+    wasm = createMockGeoSurgicalWasm();
+    wasmMode = 'mock';
+  }
+})();
+
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
 
   try {
+    await wasmReady;
+
     if (request.type === 'UPLOAD_FILE') {
       await handleUpload(request);
       return;
@@ -69,7 +84,14 @@ async function handleUpload(request: Extract<WorkerRequest, { type: 'UPLOAD_FILE
   post({
     type: 'PROGRESS',
     taskId: request.taskId,
-    progress: { phase: 'metadata', message: 'Worker 已接管文件 buffer，开始元数据分诊。', messageKey: 'progress.metadataStart', percent: 15 },
+    progress: {
+      phase: 'metadata',
+      message: wasmMode === 'real'
+        ? 'Worker 已接管文件 buffer，Rust WASM 开始元数据分诊。'
+        : 'Worker 已接管文件 buffer，开始元数据分诊（Mock 模式）。',
+      messageKey: 'progress.metadataStart',
+      percent: 15,
+    },
   });
 
   const context = requireContext(request.taskId);
@@ -79,6 +101,15 @@ async function handleUpload(request: Extract<WorkerRequest, { type: 'UPLOAD_FILE
   });
   const metadata = JSON.parse(metadataJson) as GeoSurgicalMetadata;
   context.metadata = metadata;
+
+  // Inject mode warning for mock
+  if (wasmMode === 'mock') {
+    metadata.warnings.push({
+      code: 'WASM_MOCK_MODE',
+      message: '当前使用 TypeScript Mock WASM 提取元数据，真实 Rust WASM 尚未接入。',
+      recoverable: true,
+    });
+  }
 
   post({
     type: 'PROGRESS',
@@ -98,7 +129,14 @@ async function handleExecute(request: Extract<WorkerRequest, { type: 'EXECUTE_AS
   post({
     type: 'PROGRESS',
     taskId: request.taskId,
-    progress: { phase: 'executing', message: '开始执行 GeoSurgical AST。', messageKey: 'progress.executeStart', percent: 10 },
+    progress: {
+      phase: 'executing',
+      message: wasmMode === 'real'
+        ? 'Rust WASM 开始执行 GeoSurgical AST。'
+        : '开始执行 GeoSurgical AST（Mock 模式）。',
+      messageKey: 'progress.executeStart',
+      percent: 10,
+    },
   });
 
   for (let index = 0; index < request.ast.operations.length; index += 1) {

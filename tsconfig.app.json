@@ -16,7 +16,10 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vite/client", "vitest/globals", "geojson"]
+    "types": ["vite/client", "vitest/globals", "geojson"],
+    "paths": {
+      "@wasm/geosurgical": ["./src-wasm/pkg/geosurgical_wasm.d.ts"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "src-wasm/pkg"]
 }
