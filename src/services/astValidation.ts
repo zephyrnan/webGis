@@ -37,11 +37,16 @@ const operationSchema = z.discriminatedUnion('action', [
     action: z.literal('noop'),
     reason: z.string().min(1),
   }),
+  z.object({
+    action: z.literal('need_clarification'),
+    reason: z.string().min(1),
+  }),
 ]);
 
 const astSchema = z.object({
   version: z.literal('1.0'),
   operations: z.array(operationSchema).min(1),
+  target_layer: z.string().optional(),
 });
 
 export type ValidationResult =
@@ -80,6 +85,21 @@ export function validateAst(ast: unknown, metadata: GeoSurgicalMetadata): Valida
 
     if (operation.action === 'transform_crs') {
       risks.push('ast.riskTransform');
+    }
+  }
+
+  // Validate target_layer exists in metadata.layers
+  if (parsed.data.target_layer && metadata.layers?.length) {
+    const layerExists = metadata.layers.some((l) => l.name === parsed.data.target_layer);
+    if (!layerExists) {
+      return {
+        ok: false,
+        error: {
+          code: 'LAYER_NOT_FOUND',
+          message: `图层 ${parsed.data.target_layer} 不在当前文件的图层目录中。`,
+          recoverable: true,
+        },
+      };
     }
   }
 

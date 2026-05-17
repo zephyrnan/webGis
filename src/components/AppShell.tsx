@@ -32,6 +32,7 @@ export function AppShell() {
   const [localError, setLocalError] = useState<StructuredError | null>(null);
   const [ast, setAst] = useState<GeoSurgicalAst | null>(null);
   const [risks, setRisks] = useState<string[]>([]);
+  const [selectedLayer, setSelectedLayer] = useState<string | null>(null);
   const shortcutTags = useMemo(
     () => worker.metadata ? buildShortcutTags(worker.metadata, language) : [],
     [worker.metadata, language],
@@ -75,10 +76,18 @@ export function AppShell() {
                 setLocalError(null);
                 setAst(null);
                 setRisks([]);
+                setSelectedLayer(null);
                 void worker.uploadFile(file);
               }}
             />
-            <MetadataPanel metadata={worker.metadata} />
+            <MetadataPanel
+              metadata={worker.metadata}
+              selectedLayer={selectedLayer}
+              onSelectLayer={(name) => {
+                setSelectedLayer(name);
+                worker.selectLayer(name);
+              }}
+            />
           </aside>
 
           <section className="space-y-6">
@@ -103,7 +112,14 @@ export function AppShell() {
 
           <section className="space-y-6">
             <MapPreview result={worker.result} />
-            <ResultPanel result={worker.result} undo={worker.undo} />
+            <ResultPanel
+              result={worker.result}
+              history={worker.history.entries}
+              historyIndex={worker.history.currentIndex}
+              onUndo={worker.undoHistory}
+              onRedo={worker.redoHistory}
+              onJumpTo={worker.jumpToHistory}
+            />
           </section>
         </div>
       </div>

@@ -70,11 +70,27 @@ export class MockBrainGateway implements BrainGateway {
         code: 'COMMAND_NOT_UNDERSTOOD',
         message: '当前 MVP 还不能稳定理解这条指令。',
         recoverable: true,
-        suggestedUserInput: '可以试试“删除 name 为空的要素，然后导出 GeoJSON”。',
+        suggestedUserInput: '可以试试”删除 name 为空的要素，然后导出 GeoJSON”。',
       });
     }
 
-    return { version: input.schemaVersion, operations };
+    // Detect target layer from command
+    let targetLayer: string | undefined;
+    if (input.metadata.layers?.length) {
+      for (const layer of input.metadata.layers) {
+        if (normalized.includes(layer.name.toLowerCase())) {
+          targetLayer = layer.name;
+          break;
+        }
+      }
+      // Default to the layer with the most features if not specified
+      if (!targetLayer && input.metadata.layers.length > 1) {
+        const sorted = [...input.metadata.layers].sort((a, b) => (b.featureCount ?? 0) - (a.featureCount ?? 0));
+        targetLayer = sorted[0].name;
+      }
+    }
+
+    return { version: input.schemaVersion, operations, target_layer: targetLayer };
   }
 }
 

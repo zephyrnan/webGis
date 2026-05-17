@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, Sparkles } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import { BrainPlanningError, defaultBrainGateway } from '../services/brain';
 import type { BrainGateway } from '../services/brain';
 import { validateAst } from '../services/astValidation';
+import { getSuggestions, applySuggestion } from '../services/autocomplete';
+import type { Suggestion } from '../services/autocomplete';
 import type { GeoSurgicalAst } from '../types/ast';
 import type { GeoSurgicalMetadata } from '../types/metadata';
 import type { StructuredError } from '../types/protocol';
@@ -34,9 +36,71 @@ export function CommandPalette({
   const [history, setHistory] = useState<string[]>([]);
   const [risks, setRisks] = useState<string[]>([]);
   const [isPlanning, setIsPlanning] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [selectedSuggestion, setSelectedSuggestion] = useState(0);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const gateway = brainGateway ?? defaultBrainGateway;
   const canPlan = Boolean(metadata && command.trim()) && !disabled && !isPlanning;
+
+  // Update suggestions as user types
+  const updateSuggestions = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || !metadata) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    const cursorPos = textarea.selectionStart;
+    const newSuggestions = getSuggestions(command, cursorPos, metadata);
+    setSuggestions(newSuggestions);
+    setSelectedSuggestion(0);
+    setShowSuggestions(newSuggestions.length > 0);
+  }, [command, metadata]);
+
+  useEffect(() => {
+    updateSuggestions();
+  }, [updateSuggestions]);
+
+  const acceptSuggestion = useCallback((suggestion: Suggestion) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const cursorPos = textarea.selectionStart;
+    const { text, cursorPos: newPos } = applySuggestion(command, cursorPos, suggestion);
+    onCommandChange(text);
+    setShowSuggestions(false);
+    // Restore cursor position after React re-render
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(newPos, newPos);
+    });
+  }, [command, onCommandChange]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showSuggestions && suggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedSuggestion((prev) => (prev + 1) % suggestions.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedSuggestion((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+        return;
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault();
+        acceptSuggestion(suggestions[selectedSuggestion]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowSuggestions(false);
+        return;
+      }
+    }
+  };
 
   const planCommand = async () => {
     if (!metadata) return;
@@ -44,20 +108,72 @@ export function CommandPalette({
     try {
       setIsPlanning(true);
       onError(null);
-      const ast = await gateway.plan({ command, metadata, schemaVersion: '1.0' });
-      const validation = validateAst(ast, metadata);
 
-      if (!validation.ok) {
-        setPlannedAst(null);
-        setRisks([]);
-        onAstReady(null, []);
-        onError(validation.error);
+      // Multi-step: split by `;` or ` then `
+      const segments = command.split(/;\s*|\s+then\s+/i).map((s) => s.trim()).filter(Boolean);
+
+      if (segments.length === 0) {
+        onError({ code: 'EMPTY_COMMAND', message: t('error.EMPTY_COMMAND'), recoverable: true });
         return;
       }
 
-      setPlannedAst(validation.ast);
-      setRisks(validation.risks);
-      onAstReady(validation.ast, validation.risks);
+      if (segments.length === 1) {
+        // Single command — original path
+        const ast = await gateway.plan({ command, metadata, schemaVersion: '1.0' });
+        const validation = validateAst(ast, metadata);
+        if (!validation.ok) {
+          setPlannedAst(null);
+          setRisks([]);
+          onAstReady(null, []);
+          onError(validation.error);
+          return;
+        }
+        setPlannedAst(validation.ast);
+        setRisks(validation.risks);
+        onAstReady(validation.ast, validation.risks);
+      } else {
+        // Multi-step: plan each segment, merge operations
+        const allOperations: GeoSurgicalAst['operations'] = [];
+        let targetLayer: string | undefined;
+        const allRisks: string[] = [];
+
+        for (const segment of segments) {
+          const ast = await gateway.plan({ command: segment, metadata, schemaVersion: '1.0' });
+          const validation = validateAst(ast, metadata);
+          if (!validation.ok) {
+            setPlannedAst(null);
+            setRisks([]);
+            onAstReady(null, []);
+            onError(validation.error);
+            return;
+          }
+          allOperations.push(...validation.ast.operations);
+          allRisks.push(...validation.risks);
+          if (!targetLayer && validation.ast.target_layer) {
+            targetLayer = validation.ast.target_layer;
+          }
+        }
+
+        // Deduplicate consecutive export operations — keep only the last one
+        const merged: GeoSurgicalAst['operations'] = [];
+        for (const op of allOperations) {
+          if (op.action === 'export' && merged.length > 0 && merged[merged.length - 1].action === 'export') {
+            merged[merged.length - 1] = op;
+          } else {
+            merged.push(op);
+          }
+        }
+
+        const mergedAst: GeoSurgicalAst = {
+          version: '1.0',
+          operations: merged,
+          target_layer: targetLayer,
+        };
+        setPlannedAst(mergedAst);
+        setRisks([...new Set(allRisks)]);
+        onAstReady(mergedAst, [...new Set(allRisks)]);
+      }
+
       setHistory((items) => [command, ...items.filter((item) => item !== command)].slice(0, 5));
     } catch (error) {
       const structuredError = error instanceof BrainPlanningError
@@ -78,12 +194,45 @@ export function CommandPalette({
         <h2 className="text-lg font-semibold text-white">{t('command.title')}</h2>
       </div>
 
-      <textarea
-        className="min-h-28 w-full resize-none rounded-2xl border border-slate-700 bg-slate-950 p-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
-        placeholder={metadata ? t('command.placeholder.ready') : t('command.placeholder.waiting')}
-        value={command}
-        onChange={(event) => onCommandChange(event.target.value)}
-      />
+      <div className="relative">
+        <textarea
+          ref={textareaRef}
+          className="min-h-28 w-full resize-none rounded-2xl border border-slate-700 bg-slate-950 p-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
+          placeholder={metadata ? t('command.placeholder.ready') : t('command.placeholder.waiting')}
+          value={command}
+          onChange={(event) => onCommandChange(event.target.value)}
+          onSelect={() => updateSuggestions()}
+          onKeyDown={handleKeyDown}
+        />
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="absolute left-4 right-4 z-10 mt-1 max-h-48 overflow-auto rounded-xl border border-slate-700 bg-slate-900 shadow-xl shadow-black/40">
+            {suggestions.map((s, i) => (
+              <button
+                key={`${s.kind}-${s.label}`}
+                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition ${
+                  i === selectedSuggestion
+                    ? 'bg-cyan-950/50 text-cyan-200'
+                    : 'text-slate-300 hover:bg-slate-800'
+                }`}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  acceptSuggestion(s);
+                }}
+              >
+                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                  s.kind === 'operation' ? 'bg-cyan-900/50 text-cyan-300' :
+                  s.kind === 'field' ? 'bg-emerald-900/50 text-emerald-300' :
+                  'bg-purple-900/50 text-purple-300'
+                }`}>
+                  {s.kind}
+                </span>
+                <span className="truncate font-mono">{s.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <button

@@ -5,7 +5,8 @@ export type GeoOperationAction =
   | 'fix_encoding'
   | 'rename_field'
   | 'export'
-  | 'noop';
+  | 'noop'
+  | 'need_clarification';
 
 export type FilterAreaOperation = {
   action: 'filter_area';
@@ -47,6 +48,11 @@ export type NoopOperation = {
   reason: string;
 };
 
+export type NeedClarificationOperation = {
+  action: 'need_clarification';
+  reason: string;
+};
+
 export type GeoSurgicalOperation =
   | FilterAreaOperation
   | DropEmptyOperation
@@ -54,9 +60,11 @@ export type GeoSurgicalOperation =
   | FixEncodingOperation
   | RenameFieldOperation
   | ExportOperation
-  | NoopOperation;
+  | NoopOperation
+  | NeedClarificationOperation;
 
 export type GeoSurgicalAst = {
   version: '1.0';
   operations: GeoSurgicalOperation[];
+  target_layer?: string;
 };

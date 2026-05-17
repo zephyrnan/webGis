@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Copy, Download } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
-import type { SurgeryResult, UndoCapability } from '../types/protocol';
+import type { HistoryEntry } from '../types/history';
+import type { SurgeryResult } from '../types/protocol';
 import { UndoStatus } from './UndoStatus';
 
 type ResultPanelProps = {
   result: SurgeryResult | null;
-  undo: UndoCapability | null;
+  history: HistoryEntry[];
+  historyIndex: number;
+  onUndo(): void;
+  onRedo(): void;
+  onJumpTo(index: number): void;
   onExportComplete?(): void;
 };
 
-export function ResultPanel({ result, undo, onExportComplete }: ResultPanelProps) {
+export function ResultPanel({ result, history, historyIndex, onUndo, onRedo, onJumpTo, onExportComplete }: ResultPanelProps) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
@@ -73,7 +78,13 @@ export function ResultPanel({ result, undo, onExportComplete }: ResultPanelProps
         <Metric label={t('result.operations')} value={result.summary.operations.length} />
       </div>
 
-      <UndoStatus undo={undo} />
+      <UndoStatus
+        history={history}
+        currentIndex={historyIndex}
+        onUndo={onUndo}
+        onRedo={onRedo}
+        onJumpTo={onJumpTo}
+      />
 
       <div className="space-y-2 text-sm text-slate-300">
         {result.logs.map((log) => <p key={log} className="rounded-xl bg-slate-950/70 p-3">{formatResultLog(log, t)}</p>)}

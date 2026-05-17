@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import type { GeoSurgicalAst } from '../types/ast';
+import type { HistoryEntry, HistoryState } from '../types/history';
 import type { GeoSurgicalMetadata } from '../types/metadata';
 import type { ProgressEvent, StructuredError, SurgeryResult, UndoCapability, WorkerRequest, WorkerResponse } from '../types/protocol';
 
@@ -23,6 +24,8 @@ export function useGeoSurgicalWorker() {
   const [error, setError] = useState<StructuredError | null>(null);
   const [result, setResult] = useState<SurgeryResult | null>(null);
   const [undo, setUndo] = useState<UndoCapability | null>(null);
+  const [history, setHistory] = useState<HistoryState>({ entries: [], currentIndex: -1 });
+  const lastAstRef = useRef<GeoSurgicalAst | null>(null);
 
   useEffect(() => {
     const worker = new Worker(new URL('../workers/geosurgical.worker.ts', import.meta.url), { type: 'module' });
@@ -46,6 +49,28 @@ export function useGeoSurgicalWorker() {
         setResult(response.result);
         setUndo(response.undo);
         setStatus('completed');
+        // Push history entry
+        if (lastAstRef.current) {
+          setHistory((prev) => {
+            const entry: HistoryEntry = {
+              id: nanoid(),
+              ast: lastAstRef.current!,
+              resultSnapshot: response.result,
+              timestamp: Date.now(),
+            };
+            const truncated = prev.entries.slice(0, prev.currentIndex + 1);
+            return {
+              entries: [...truncated, entry],
+              currentIndex: truncated.length,
+            };
+          });
+        }
+        return;
+      }
+
+      if (response.type === 'LAYER_SELECTED') {
+        setMetadata(response.metadata);
+        setStatus('ready');
         return;
       }
 
@@ -76,6 +101,8 @@ export function useGeoSurgicalWorker() {
     setError(null);
     setResult(null);
     setUndo(null);
+    setHistory({ entries: [], currentIndex: -1 });
+    lastAstRef.current = null;
 
     const buffer = await file.arrayBuffer();
     setStatus('metadata-extracting');
@@ -99,6 +126,7 @@ export function useGeoSurgicalWorker() {
     setError(null);
     setResult(null);
     setUndo(null);
+    lastAstRef.current = ast;
     post({ type: 'EXECUTE_AST', taskId, ast });
   }, [post]);
 
@@ -110,6 +138,67 @@ export function useGeoSurgicalWorker() {
     post({ type: 'CANCEL_TASK', taskId });
   }, [post]);
 
+  const selectLayer = useCallback((layerName: string) => {
+    const taskId = taskIdRef.current;
+    if (!taskId) return;
+
+    post({ type: 'SELECT_LAYER', taskId, layerName });
+  }, [post]);
+
+  const undoHistory = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.currentIndex <= 0) return prev;
+      const newIndex = prev.currentIndex - 1;
+      const entry = prev.entries[newIndex];
+      if (entry) {
+        setResult(entry.resultSnapshot);
+        setStatus('completed');
+      }
+      return { ...prev, currentIndex: newIndex };
+    });
+  }, []);
+
+  const redoHistory = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.currentIndex >= prev.entries.length - 1) return prev;
+      const newIndex = prev.currentIndex + 1;
+      const entry = prev.entries[newIndex];
+      if (entry) {
+        setResult(entry.resultSnapshot);
+        setStatus('completed');
+      }
+      return { ...prev, currentIndex: newIndex };
+    });
+  }, []);
+
+  const jumpToHistory = useCallback((index: number) => {
+    setHistory((prev) => {
+      if (index < 0 || index >= prev.entries.length) return prev;
+      const entry = prev.entries[index];
+      if (entry) {
+        setResult(entry.resultSnapshot);
+        setStatus('completed');
+      }
+      return { ...prev, currentIndex: index };
+    });
+  }, []);
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undoHistory();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) {
+        e.preventDefault();
+        redoHistory();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undoHistory, redoHistory]);
+
   return useMemo(() => ({
     status,
     metadata,
@@ -117,8 +206,13 @@ export function useGeoSurgicalWorker() {
     error,
     result,
     undo,
+    history,
     uploadFile,
     executeAst,
     cancelTask,
-  }), [status, metadata, progress, error, result, undo, uploadFile, executeAst, cancelTask]);
+    selectLayer,
+    undoHistory,
+    redoHistory,
+    jumpToHistory,
+  }), [status, metadata, progress, error, result, undo, history, uploadFile, executeAst, cancelTask, selectLayer, undoHistory, redoHistory, jumpToHistory]);
 }

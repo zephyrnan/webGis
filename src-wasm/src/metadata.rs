@@ -132,6 +132,7 @@ fn extract_geojson_metadata(input: &[u8], file_name: &str, file_size: f64) -> Re
             truncated,
         },
         warnings: vec![],
+        layers: None,
     })
 }
 
@@ -140,41 +141,39 @@ fn extract_zip_metadata(input: &[u8], file_name: &str, file_size: f64) -> Result
     let mut archive = ZipArchive::new(cursor)
         .map_err(|e| JsError::new(&format!("ZIP 解析失败: {}", e)))?;
 
-    let mut dbf_bytes: Option<Vec<u8>> = None;
-    let mut shp_bytes: Option<Vec<u8>> = None;
+    // Collect all .shp/.dbf pairs by stem name
+    let mut layer_bytes: HashMap<String, (Option<Vec<u8>>, Option<Vec<u8>>)> = HashMap::new();
     let mut warnings = Vec::new();
 
     for index in 0..archive.len() {
         let mut file = archive.by_index(index)
             .map_err(|e| JsError::new(&format!("ZIP 条目读取失败: {}", e)))?;
-        let entry_name = file.name().to_lowercase();
+        let entry_name = file.name().to_string();
+        let lower = entry_name.to_lowercase();
 
-        if entry_name.ends_with(".dbf") {
+        if lower.ends_with(".shp") || lower.ends_with(".dbf") {
+            let stem = stem_name(&entry_name);
             let mut bytes = Vec::new();
             file.read_to_end(&mut bytes)
-                .map_err(|e| JsError::new(&format!("DBF 条目读取失败: {}", e)))?;
-            dbf_bytes = Some(bytes);
-        } else if entry_name.ends_with(".shp") {
-            let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes)
-                .map_err(|e| JsError::new(&format!("SHP 条目读取失败: {}", e)))?;
-            shp_bytes = Some(bytes);
+                .map_err(|e| JsError::new(&format!("ZIP 条目读取失败: {}", e)))?;
+
+            let entry = layer_bytes.entry(stem).or_insert((None, None));
+            if lower.ends_with(".shp") {
+                entry.0 = Some(bytes);
+            } else {
+                entry.1 = Some(bytes);
+            }
         }
     }
 
-    let dbf_metadata = dbf_bytes.as_deref().map(parse_dbf_lossy);
-    let shp_metadata = shp_bytes.as_deref().map(parse_shp_header);
-
-    if dbf_bytes.is_none() {
-        warnings.push(GeoWarning {
-            code: "DBF_NOT_FOUND".to_string(),
-            message: "ZIP 中未找到 .dbf 属性表，字段摘要为空。".to_string(),
-            recoverable: true,
-            suggested_user_input: None,
-        });
+    // Build layer info for each .shp found
+    let mut layers: Vec<LayerInfo> = Vec::new();
+    for (stem, (shp_bytes, dbf_bytes)) in &layer_bytes {
+        if shp_bytes.is_none() { continue; }
+        layers.push(extract_layer_info(shp_bytes.as_ref().unwrap(), dbf_bytes.as_deref(), stem));
     }
 
-    if shp_bytes.is_none() {
+    if layers.is_empty() {
         warnings.push(GeoWarning {
             code: "SHP_NOT_FOUND".to_string(),
             message: "ZIP 中未找到 .shp 主文件，BBox 和要素数量未知。".to_string(),
@@ -183,24 +182,37 @@ fn extract_zip_metadata(input: &[u8], file_name: &str, file_size: f64) -> Result
         });
     }
 
+    if layers.iter().all(|l| l.fields.is_empty()) {
+        warnings.push(GeoWarning {
+            code: "DBF_NOT_FOUND".to_string(),
+            message: "ZIP 中未找到 .dbf 属性表，字段摘要为空。".to_string(),
+            recoverable: true,
+            suggested_user_input: None,
+        });
+    }
+
     warnings.push(GeoWarning {
         code: "LOSSY_DBF_DECODE".to_string(),
-        message: "DBF 字段名和样本使用 UTF-8 lossy fallback 解码，非 UTF-8 字节会显示为 �。".to_string(),
+        message: "DBF 字段名和样本使用 UTF-8 lossy fallback 解码，非 UTF-8 字节会显示为 。".to_string(),
         recoverable: true,
         suggested_user_input: None,
     });
 
-    let fields = dbf_metadata.as_ref().map(|meta| meta.fields.clone()).unwrap_or_default();
-    let total_field_count = dbf_metadata.as_ref().map(|meta| meta.total_field_count).unwrap_or(fields.len());
-    let truncated = total_field_count > fields.len();
+    // Use first layer's data for top-level metadata (backward compatibility)
+    let first_feature_count = layers.first().and_then(|l| l.feature_count);
+    let first_bbox = layers.first().and_then(|l| l.bbox);
+    let fields = layers.first().map(|l| l.fields.clone()).unwrap_or_default();
+    let total_field_count = fields.len();
+    let truncated = total_field_count > MAX_FIELDS;
+    let layer_list = if !layers.is_empty() { Some(layers) } else { None };
 
     Ok(GeoSurgicalMetadata {
         file_type: "shapefile_zip".to_string(),
         file_name: file_name.to_string(),
         file_size,
-        feature_count_estimate: dbf_metadata.as_ref().map(|meta| meta.record_count).or_else(|| shp_metadata.as_ref().and_then(|meta| meta.feature_count)),
+        feature_count_estimate: first_feature_count,
         fields,
-        bbox: shp_metadata.as_ref().and_then(|meta| meta.bbox),
+        bbox: first_bbox,
         crs: None,
         encoding: Some("lossy-utf8".to_string()),
         field_policy: FieldPolicy {
@@ -209,7 +221,29 @@ fn extract_zip_metadata(input: &[u8], file_name: &str, file_size: f64) -> Result
             truncated,
         },
         warnings,
+        layers: layer_list,
     })
+}
+
+fn stem_name(entry_name: &str) -> String {
+    let base = entry_name.rsplit_once('/').map(|(_, b)| b).unwrap_or(entry_name);
+    base.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(base).to_string()
+}
+
+fn extract_layer_info(shp_bytes: &[u8], dbf_bytes: Option<&[u8]>, name: &str) -> LayerInfo {
+    let shp_meta = parse_shp_header(shp_bytes);
+    let dbf_meta = dbf_bytes.map(parse_dbf_lossy);
+
+    let mut fields = dbf_meta.as_ref().map(|m| m.fields.clone()).unwrap_or_default();
+    fields.truncate(MAX_FIELDS);
+
+    LayerInfo {
+        name: name.to_string(),
+        feature_count: dbf_meta.as_ref().map(|m| m.record_count).or(shp_meta.feature_count),
+        fields,
+        bbox: shp_meta.bbox,
+        encoding: if dbf_bytes.is_some() { Some("lossy-utf8".to_string()) } else { None },
+    }
 }
 
 fn extract_shp_metadata(input: &[u8], file_name: &str, file_size: f64) -> Result<GeoSurgicalMetadata, JsError> {
@@ -235,6 +269,7 @@ fn extract_shp_metadata(input: &[u8], file_name: &str, file_size: f64) -> Result
             recoverable: true,
             suggested_user_input: None,
         }],
+        layers: None,
     })
 }
 
@@ -378,6 +413,7 @@ fn build_single_feature_metadata(feature: &geojson::Feature, file_name: &str, fi
         bbox,
         fields,
         warnings: vec![],
+        layers: None,
     }
 }
 
@@ -422,6 +458,7 @@ fn build_lossy_binary_metadata(input: &[u8], file_name: &str, file_size: f64, pa
                 suggested_user_input: None,
             },
         ],
+        layers: None,
     }
 }
 

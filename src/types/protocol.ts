@@ -63,6 +63,11 @@ export type WorkerRequest =
       type: 'SEARCH_FIELDS';
       taskId: TaskId;
       query: string;
+    }
+  | {
+      type: 'SELECT_LAYER';
+      taskId: TaskId;
+      layerName: string;
     };
 
 export type WorkerResponse =
@@ -86,6 +91,11 @@ export type WorkerResponse =
       type: 'FIELDS_FOUND';
       taskId: TaskId;
       fields: GeoSurgicalMetadata['fields'];
+    }
+  | {
+      type: 'LAYER_SELECTED';
+      taskId: TaskId;
+      metadata: GeoSurgicalMetadata;
     }
   | {
       type: 'ERROR';

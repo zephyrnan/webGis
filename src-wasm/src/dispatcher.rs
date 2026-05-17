@@ -12,7 +12,7 @@ pub fn execute(
     file_size: f64,
     progress_callback: &Option<Function>,
 ) -> Result<Vec<u8>, JsError> {
-    let mut fc = parse_input_feature_collection(input, file_name)?;
+    let mut fc = parse_input_feature_collection(input, file_name, ast.target_layer.as_deref())?;
 
     let input_count = fc.features.len();
     let total_ops = ast.operations.len();
@@ -75,6 +75,10 @@ pub fn execute(
             Operation::Noop { reason } => {
                 logs.push(format!("operation:noop ({})", reason));
             }
+            Operation::NeedClarification { reason } => {
+                logs.push(format!("operation:need_clarification ({})", reason));
+                warnings.push(format!("NEED_CLARIFICATION: {}", reason));
+            }
         }
     }
 
@@ -106,9 +110,9 @@ pub fn execute(
     Ok(json.into_bytes())
 }
 
-fn parse_input_feature_collection(input: &[u8], file_name: &str) -> Result<geojson::FeatureCollection, JsError> {
+fn parse_input_feature_collection(input: &[u8], file_name: &str, target_layer: Option<&str>) -> Result<geojson::FeatureCollection, JsError> {
     if is_zip_input(input, file_name) {
-        return parse_zipped_feature_collection(input);
+        return parse_zipped_feature_collection(input, target_layer);
     }
 
     parse_geojson_feature_collection(input)
@@ -130,35 +134,67 @@ fn parse_geojson_feature_collection(input: &[u8]) -> Result<geojson::FeatureColl
     }
 }
 
-fn parse_zipped_feature_collection(input: &[u8]) -> Result<geojson::FeatureCollection, JsError> {
+fn parse_zipped_feature_collection(input: &[u8], target_layer: Option<&str>) -> Result<geojson::FeatureCollection, JsError> {
     let cursor = Cursor::new(input);
     let mut archive = ZipArchive::new(cursor)
         .map_err(|e| JsError::new(&format!("ZIP 解析失败: {}", e)))?;
 
-    let mut shp_bytes: Option<Vec<u8>> = None;
-    let mut dbf_bytes: Option<Vec<u8>> = None;
+    // Collect all shp/dbf pairs by stem, plus any geojson files
+    let mut layer_bytes: std::collections::HashMap<String, (Option<Vec<u8>>, Option<Vec<u8>>)> = std::collections::HashMap::new();
+    let mut geojson_fc: Option<geojson::FeatureCollection> = None;
 
     for index in 0..archive.len() {
         let mut file = archive.by_index(index)
             .map_err(|e| JsError::new(&format!("ZIP 条目读取失败: {}", e)))?;
-        let entry_name = file.name().to_lowercase();
+        let entry_name = file.name().to_string();
+        let lower = entry_name.to_lowercase();
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)
             .map_err(|e| JsError::new(&format!("ZIP 条目读取失败: {}", e)))?;
 
-        if entry_name.ends_with(".geojson") || entry_name.ends_with(".json") {
-            if let Ok(fc) = parse_geojson_feature_collection(&bytes) {
-                return Ok(fc);
+        if lower.ends_with(".geojson") || lower.ends_with(".json") {
+            if geojson_fc.is_none() {
+                geojson_fc = parse_geojson_feature_collection(&bytes).ok();
             }
-        } else if entry_name.ends_with(".shp") {
-            shp_bytes = Some(bytes);
-        } else if entry_name.ends_with(".dbf") {
-            dbf_bytes = Some(bytes);
+        } else if lower.ends_with(".shp") || lower.ends_with(".dbf") {
+            let stem = stem_name(&entry_name);
+            let entry = layer_bytes.entry(stem).or_insert((None, None));
+            if lower.ends_with(".shp") {
+                entry.0 = Some(bytes);
+            } else {
+                entry.1 = Some(bytes);
+            }
         }
     }
 
-    let shp_bytes = shp_bytes.ok_or_else(|| JsError::new("ZIP 中未找到 .shp 主文件，无法执行导出。"))?;
-    parse_shapefile_feature_collection(&shp_bytes, dbf_bytes.as_deref())
+    // If we found GeoJSON, prefer that
+    if let Some(fc) = geojson_fc {
+        return Ok(fc);
+    }
+
+    // Find the target layer or fall back to the one with most features
+    let matched = if let Some(target) = target_layer {
+        layer_bytes.iter().find(|(stem, (shp, _))| stem.eq_ignore_ascii_case(target) && shp.is_some())
+    } else {
+        // No explicit target — pick the layer with the most features (deterministic fallback)
+        layer_bytes.iter()
+            .filter(|(_, (shp, _))| shp.is_some())
+            .max_by_key(|(_, (shp, dbf))| {
+                let shp_count = shp.as_ref().and_then(|s| parse_shp_feature_count(s)).unwrap_or(0);
+                let dbf_count = dbf.as_ref().and_then(|d| parse_dbf_record_count(d)).unwrap_or(0);
+                shp_count.max(dbf_count)
+            })
+    };
+
+    let (_, (shp_bytes, dbf_bytes)) = matched
+        .ok_or_else(|| JsError::new("ZIP 中未找到匹配的 .shp 文件，无法执行导出。"))?;
+
+    parse_shapefile_feature_collection(shp_bytes.as_ref().unwrap(), dbf_bytes.as_deref())
+}
+
+fn stem_name(entry_name: &str) -> String {
+    let base = entry_name.rsplit_once('/').map(|(_, b)| b).unwrap_or(entry_name);
+    base.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(base).to_string()
 }
 
 fn parse_shapefile_feature_collection(shp_bytes: &[u8], dbf_bytes: Option<&[u8]>) -> Result<geojson::FeatureCollection, JsError> {
@@ -330,6 +366,18 @@ fn is_zip_input(input: &[u8], file_name: &str) -> bool {
     input.starts_with(&[0x50, 0x4B]) || file_name.to_lowercase().ends_with(".zip")
 }
 
+fn parse_shp_feature_count(shp_bytes: &[u8]) -> Option<usize> {
+    if shp_bytes.len() < 100 { return None; }
+    // SHP header: file length at bytes 24-27 (16-bit words), but feature count is not in header.
+    // We count shapes by iterating the shape index. For a lightweight check, return None.
+    None
+}
+
+fn parse_dbf_record_count(dbf_bytes: &[u8]) -> Option<usize> {
+    if dbf_bytes.len() < 12 { return None; }
+    Some(u32::from_le_bytes([dbf_bytes[4], dbf_bytes[5], dbf_bytes[6], dbf_bytes[7]]) as usize)
+}
+
 fn operation_name(op: &Operation) -> &str {
     match op {
         Operation::FilterArea { .. } => "filter_area",
@@ -339,6 +387,7 @@ fn operation_name(op: &Operation) -> &str {
         Operation::FixEncoding { .. } => "fix_encoding",
         Operation::Export { .. } => "export",
         Operation::Noop { .. } => "noop",
+        Operation::NeedClarification { .. } => "need_clarification",
     }
 }
 

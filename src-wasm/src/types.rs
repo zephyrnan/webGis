@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 pub struct GeoSurgicalAst {
     pub version: String,
     pub operations: Vec<Operation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_layer: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,9 +29,11 @@ pub enum Operation {
     Export { format: String },
     #[serde(rename = "noop")]
     Noop { reason: String },
+    #[serde(rename = "need_clarification")]
+    NeedClarification { reason: String },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeoField {
     pub name: String,
     #[serde(rename = "type")]
@@ -75,6 +79,18 @@ pub struct GeoSurgicalMetadata {
     #[serde(rename = "fieldPolicy")]
     pub field_policy: FieldPolicy,
     pub warnings: Vec<GeoWarning>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layers: Option<Vec<LayerInfo>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LayerInfo {
+    pub name: String,
+    #[serde(rename = "featureCount")]
+    pub feature_count: Option<usize>,
+    pub fields: Vec<GeoField>,
+    pub bbox: Option<[f64; 4]>,
+    pub encoding: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

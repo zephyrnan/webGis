@@ -62,6 +62,30 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         taskId: request.taskId,
         fields: (context.metadata?.fields ?? []).filter((field) => field.name.toLowerCase().includes(query)),
       });
+      return;
+    }
+
+    if (request.type === 'SELECT_LAYER') {
+      const context = requireContext(request.taskId);
+      const layers = context.metadata?.layers;
+      if (!layers) {
+        throw new Error('NO_LAYERS_AVAILABLE');
+      }
+      const layer = layers.find((l) => l.name === request.layerName);
+      if (!layer) {
+        throw new Error('LAYER_NOT_FOUND');
+      }
+      // Update context metadata with selected layer's data
+      const updated: GeoSurgicalMetadata = {
+        ...context.metadata!,
+        fields: layer.fields,
+        featureCountEstimate: layer.featureCount,
+        bbox: layer.bbox,
+        encoding: layer.encoding,
+      };
+      context.metadata = updated;
+      post({ type: 'LAYER_SELECTED', taskId: request.taskId, metadata: updated });
+      return;
     }
   } catch (error) {
     post({

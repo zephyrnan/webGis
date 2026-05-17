@@ -4,9 +4,11 @@ import { formatBbox, formatBytes } from '../services/formatters';
 
 type MetadataPanelProps = {
   metadata: GeoSurgicalMetadata | null;
+  selectedLayer?: string | null;
+  onSelectLayer?(layerName: string): void;
 };
 
-export function MetadataPanel({ metadata }: MetadataPanelProps) {
+export function MetadataPanel({ metadata, selectedLayer, onSelectLayer }: MetadataPanelProps) {
   const { t } = useI18n();
 
   if (!metadata) {
@@ -30,6 +32,31 @@ export function MetadataPanel({ metadata }: MetadataPanelProps) {
         <Metric label={t('metadata.encoding')} value={metadata.encoding ?? t('metadata.notDetected')} />
         <Metric label="BBox" value={formatBbox(metadata.bbox)} />
       </div>
+
+      {metadata.layers && metadata.layers.length > 0 && (
+        <div>
+          <p className="mb-2 text-sm font-medium text-slate-200">{t('metadata.layers')}</p>
+          <div className="max-h-40 space-y-1 overflow-auto pr-1">
+            {metadata.layers.map((layer) => (
+              <button
+                key={layer.name}
+                className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                  selectedLayer === layer.name
+                    ? 'border border-cyan-400/40 bg-cyan-950/40 text-cyan-200'
+                    : 'bg-slate-950/70 text-slate-300 hover:bg-slate-800'
+                }`}
+                type="button"
+                onClick={() => onSelectLayer?.(layer.name)}
+              >
+                <span className="font-medium">{layer.name}</span>
+                <span className="ml-2 text-xs text-slate-500">
+                  {layer.featureCount ?? '?'} {t('metadata.featureCount')} · {layer.fields.length} {t('metadata.fields')}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <div className="mb-2 flex items-center justify-between text-sm">

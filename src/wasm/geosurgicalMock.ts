@@ -97,6 +97,7 @@ function extractGeoJsonMetadata(input: Uint8Array, context: MetadataInputContext
         recoverable: true,
       },
     ],
+    layers: undefined,
   };
 }
 
@@ -128,6 +129,13 @@ function createBinaryMockMetadata(context: MetadataInputContext, extension: stri
         suggestedUserInput: '这个文件的原始坐标系是 EPSG:4326。',
       },
     ],
+    layers: extension === '.zip' ? [{
+      name: context.fileName.replace(/\.[^.]+$/, ''),
+      featureCount: null,
+      fields: [],
+      bbox: null,
+      encoding: null,
+    }] : undefined,
   };
 }
 

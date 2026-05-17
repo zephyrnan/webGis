@@ -35,7 +35,10 @@ const SYSTEM_PROMPT = `You are a REST API that outputs ONLY raw JSON. Do NOT wra
 7. drop_empty 必须包含 field；filter_area 必须包含 field、operator、value；rename_field 必须包含 from、to。
 8. 如果检测到原始数据的 CRS 已经是 EPSG:4326，且用户没有明确要求转换到其他坐标系，绝对禁止生成 transform_crs 指令，不要写废话。
 9. 遇到乱码必须使用 fix_encoding，绝对禁止返回 noop。
-10. 如果用户只是要求“输出 WGS84 / 保持 WGS84 / 导出 WGS84”，且 Metadata CRS 已经是 EPSG:4326，只生成 export，不生成 EPSG:4326 到 EPSG:4326 的 transform_crs。
+10. 如果用户只是要求”输出 WGS84 / 保持 WGS84 / 导出 WGS84”，且 Metadata CRS 已经是 EPSG:4326，只生成 export，不生成 EPSG:4326 到 EPSG:4326 的 transform_crs。
+11. 如果 Metadata 包含图层目录(layers)，用户可能指定操作某个图层。在 AST 中使用 target_layer 字段指定图层名称（放在 JSON 顶层，与 version 和 operations 同级）。
+12. 如果 Metadata 有多个图层但用户没有明确指定图层，target_layer 默认选择 featureCount 最大的主图层。
+13. 如果用户指令模糊且无法推断目标图层，返回 need_clarification action：{"action":"need_clarification","reason":"请指定要处理的图层名称"}。在 operations 数组中使用 need_clarification 时，不需要 export 操作。
 
 ### 正确指令示例（当用户要求修复 Windows-1256 乱码并输出 WGS84 时）：
 {
@@ -122,6 +125,13 @@ export class LlmBrainGateway implements BrainGateway {
         ? ` (示例: ${field.sample.slice(0, 3).map(v => JSON.stringify(v)).join(', ')})`
         : '';
       lines.push(`  - ${field.name}: ${field.type}${sampleStr}`);
+    }
+
+    if (metadata.layers?.length) {
+      lines.push('\n图层目录:');
+      for (const layer of metadata.layers) {
+        lines.push(`  - ${layer.name}: ${layer.featureCount ?? '未知'} 要素, ${layer.fields.length} 字段`);
+      }
     }
 
     return lines.join('\n');
@@ -234,6 +244,7 @@ export class LlmBrainGateway implements BrainGateway {
     return {
       version: value.version === '1.0' ? '1.0' : '1.0',
       operations,
+      target_layer: typeof value.target_layer === 'string' ? value.target_layer : undefined,
     };
   }
 
@@ -283,6 +294,13 @@ export class LlmBrainGateway implements BrainGateway {
 
     if (action === 'export') {
       return { action: 'export', format: 'geojson' };
+    }
+
+    if (action === 'need_clarification') {
+      return {
+        action: 'need_clarification',
+        reason: typeof op.reason === 'string' && op.reason ? op.reason : '需要用户指定目标图层。',
+      };
     }
 
     return {

@@ -31,4 +31,13 @@ export type GeoSurgicalMetadata = {
   encoding: string | null;
   fieldPolicy: FieldPolicy;
   warnings: GeoWarning[];
+  layers?: LayerInfo[];
+};
+
+export type LayerInfo = {
+  name: string;
+  featureCount: number | null;
+  fields: GeoField[];
+  bbox: [number, number, number, number] | null;
+  encoding: string | null;
 };
