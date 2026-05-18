@@ -16,15 +16,19 @@ const taskContexts = new Map<string, {
   cancelled: boolean;
 }>();
 
+let wasmLoadError: string | undefined;
+
 const wasmReady = (async () => {
   try {
     const { createRealGeoSurgicalWasm } = await import('../wasm/geosurgicalRealWasm');
     wasm = createRealGeoSurgicalWasm();
     wasmMode = 'real';
-  } catch {
+  } catch (err) {
+    wasmLoadError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     wasm = createMockGeoSurgicalWasm();
     wasmMode = 'mock';
   }
+  post({ type: 'ENGINE_STATUS', mode: wasmMode, wasmError: wasmLoadError });
 })();
 
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
@@ -81,6 +85,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         fields: layer.fields,
         featureCountEstimate: layer.featureCount,
         bbox: layer.bbox,
+        crs: layer.crs ?? context.metadata!.crs,
         encoding: layer.encoding,
       };
       context.metadata = updated;
@@ -130,7 +135,9 @@ async function handleUpload(request: Extract<WorkerRequest, { type: 'UPLOAD_FILE
   if (wasmMode === 'mock') {
     metadata.warnings.push({
       code: 'WASM_MOCK_MODE',
-      message: '当前使用 TypeScript Mock WASM 提取元数据，真实 Rust WASM 尚未接入。',
+      message: wasmLoadError
+        ? `WASM 加载失败（${wasmLoadError}），已回退至 Mock 模式。`
+        : '当前使用 TypeScript Mock WASM 提取元数据，真实 Rust WASM 尚未接入。',
       recoverable: true,
     });
   }

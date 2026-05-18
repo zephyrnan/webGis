@@ -3,6 +3,7 @@ use std::io::{Cursor, Read};
 use geojson::GeoJson;
 use serde_json::Value;
 use zip::ZipArchive;
+use encoding_rs::Encoding;
 use crate::types::*;
 
 const MAX_FIELDS: usize = 50;
@@ -117,6 +118,8 @@ fn extract_geojson_metadata(input: &[u8], file_name: &str, file_size: f64) -> Re
     fields.truncate(MAX_FIELDS);
     let bbox = calculate_bbox(features);
 
+    let (crs, crs_confidence) = detect_crs(bbox);
+
     Ok(GeoSurgicalMetadata {
         file_type: "geojson".to_string(),
         file_name: file_name.to_string(),
@@ -124,7 +127,8 @@ fn extract_geojson_metadata(input: &[u8], file_name: &str, file_size: f64) -> Re
         feature_count_estimate: Some(feature_count),
         fields,
         bbox,
-        crs: detect_crs(bbox),
+        crs,
+        crs_confidence,
         encoding: Some("UTF-8".to_string()),
         field_policy: FieldPolicy {
             total_field_count,
@@ -141,8 +145,11 @@ fn extract_zip_metadata(input: &[u8], file_name: &str, file_size: f64) -> Result
     let mut archive = ZipArchive::new(cursor)
         .map_err(|e| JsError::new(&format!("ZIP 解析失败: {}", e)))?;
 
-    // Collect all .shp/.dbf pairs by stem name
-    let mut layer_bytes: HashMap<String, (Option<Vec<u8>>, Option<Vec<u8>>)> = HashMap::new();
+    // Collect .shp/.dbf/.prj/.cpg by stem name
+    let mut shp_bytes: HashMap<String, Vec<u8>> = HashMap::new();
+    let mut dbf_bytes: HashMap<String, Vec<u8>> = HashMap::new();
+    let mut prj_bytes: HashMap<String, Vec<u8>> = HashMap::new();
+    let mut cpg_bytes: HashMap<String, Vec<u8>> = HashMap::new();
     let mut warnings = Vec::new();
 
     for index in 0..archive.len() {
@@ -150,27 +157,37 @@ fn extract_zip_metadata(input: &[u8], file_name: &str, file_size: f64) -> Result
             .map_err(|e| JsError::new(&format!("ZIP 条目读取失败: {}", e)))?;
         let entry_name = file.name().to_string();
         let lower = entry_name.to_lowercase();
+        let stem = stem_name(&entry_name);
 
-        if lower.ends_with(".shp") || lower.ends_with(".dbf") {
-            let stem = stem_name(&entry_name);
-            let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes)
-                .map_err(|e| JsError::new(&format!("ZIP 条目读取失败: {}", e)))?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|e| JsError::new(&format!("ZIP 条目读取失败: {}", e)))?;
 
-            let entry = layer_bytes.entry(stem).or_insert((None, None));
-            if lower.ends_with(".shp") {
-                entry.0 = Some(bytes);
-            } else {
-                entry.1 = Some(bytes);
-            }
+        if lower.ends_with(".shp") {
+            shp_bytes.insert(stem, bytes);
+        } else if lower.ends_with(".dbf") {
+            dbf_bytes.insert(stem, bytes);
+        } else if lower.ends_with(".prj") {
+            prj_bytes.insert(stem, bytes);
+        } else if lower.ends_with(".cpg") {
+            cpg_bytes.insert(stem, bytes);
         }
     }
 
     // Build layer info for each .shp found
     let mut layers: Vec<LayerInfo> = Vec::new();
-    for (stem, (shp_bytes, dbf_bytes)) in &layer_bytes {
-        if shp_bytes.is_none() { continue; }
-        layers.push(extract_layer_info(shp_bytes.as_ref().unwrap(), dbf_bytes.as_deref(), stem));
+    let mut any_missing_prj = false;
+    let mut any_missing_cpg = false;
+
+    for (stem, shp) in &shp_bytes {
+        let dbf = dbf_bytes.get(stem).map(|v| v.as_slice());
+        let prj = prj_bytes.get(stem).map(|v| v.as_slice());
+        let cpg = cpg_bytes.get(stem).map(|v| v.as_slice());
+
+        if prj.is_none() { any_missing_prj = true; }
+        if cpg.is_none() && dbf.is_some() { any_missing_cpg = true; }
+
+        layers.push(extract_layer_info(shp, dbf, prj, cpg, stem));
     }
 
     if layers.is_empty() {
@@ -191,17 +208,32 @@ fn extract_zip_metadata(input: &[u8], file_name: &str, file_size: f64) -> Result
         });
     }
 
-    warnings.push(GeoWarning {
-        code: "LOSSY_DBF_DECODE".to_string(),
-        message: "DBF 字段名和样本使用 UTF-8 lossy fallback 解码，非 UTF-8 字节会显示为 。".to_string(),
-        recoverable: true,
-        suggested_user_input: None,
-    });
+    if any_missing_prj {
+        warnings.push(GeoWarning {
+            code: "MISSING_PRJ".to_string(),
+            message: "ZIP 中未找到 .prj 投影文件，坐标系无法自动识别。".to_string(),
+            recoverable: true,
+            suggested_user_input: Some("请确认坐标系（如 EPSG:4326），或提供 .prj 文件。".to_string()),
+        });
+    }
+
+    if any_missing_cpg {
+        warnings.push(GeoWarning {
+            code: "MISSING_CPG".to_string(),
+            message: "ZIP 中未找到 .cpg 编码文件，已尝试从 DBF 头部 LDID 推断编码。如仍有乱码请手动指定。".to_string(),
+            recoverable: true,
+            suggested_user_input: Some("如果字段名乱码，请手动指定编码（如 GBK、windows-1256）。".to_string()),
+        });
+    }
 
     // Use first layer's data for top-level metadata (backward compatibility)
-    let first_feature_count = layers.first().and_then(|l| l.feature_count);
-    let first_bbox = layers.first().and_then(|l| l.bbox);
-    let fields = layers.first().map(|l| l.fields.clone()).unwrap_or_default();
+    let first_layer = layers.first();
+    let first_feature_count = first_layer.and_then(|l| l.feature_count);
+    let first_bbox = first_layer.and_then(|l| l.bbox);
+    let first_crs = first_layer.and_then(|l| l.crs.clone());
+    let first_crs_confidence = first_layer.and_then(|l| l.crs_confidence.clone());
+    let first_encoding = first_layer.and_then(|l| l.encoding.clone());
+    let fields = first_layer.map(|l| l.fields.clone()).unwrap_or_default();
     let total_field_count = fields.len();
     let truncated = total_field_count > MAX_FIELDS;
     let layer_list = if !layers.is_empty() { Some(layers) } else { None };
@@ -213,8 +245,9 @@ fn extract_zip_metadata(input: &[u8], file_name: &str, file_size: f64) -> Result
         feature_count_estimate: first_feature_count,
         fields,
         bbox: first_bbox,
-        crs: None,
-        encoding: Some("lossy-utf8".to_string()),
+        crs: first_crs,
+        crs_confidence: first_crs_confidence,
+        encoding: first_encoding.or_else(|| Some("lossy-utf8".to_string())),
         field_policy: FieldPolicy {
             total_field_count,
             included_field_count: total_field_count.min(MAX_FIELDS),
@@ -230,9 +263,21 @@ fn stem_name(entry_name: &str) -> String {
     base.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(base).to_string()
 }
 
-fn extract_layer_info(shp_bytes: &[u8], dbf_bytes: Option<&[u8]>, name: &str) -> LayerInfo {
+fn extract_layer_info(
+    shp_bytes: &[u8],
+    dbf_bytes: Option<&[u8]>,
+    prj_bytes: Option<&[u8]>,
+    cpg_bytes: Option<&[u8]>,
+    name: &str,
+) -> LayerInfo {
     let shp_meta = parse_shp_header(shp_bytes);
-    let dbf_meta = dbf_bytes.map(parse_dbf_lossy);
+    let (crs, crs_confidence) = prj_bytes
+        .map(|prj| parse_crs_from_prj(prj))
+        .unwrap_or((None, None));
+    let encoding = resolve_encoding(cpg_bytes, dbf_bytes);
+    let dbf_encoding = cpg_bytes.and_then(|cpg| resolve_encoding_for_label(cpg));
+
+    let dbf_meta = dbf_bytes.map(|dbf| parse_dbf_with_encoding(dbf, dbf_encoding));
 
     let mut fields = dbf_meta.as_ref().map(|m| m.fields.clone()).unwrap_or_default();
     fields.truncate(MAX_FIELDS);
@@ -242,7 +287,9 @@ fn extract_layer_info(shp_bytes: &[u8], dbf_bytes: Option<&[u8]>, name: &str) ->
         feature_count: dbf_meta.as_ref().map(|m| m.record_count).or(shp_meta.feature_count),
         fields,
         bbox: shp_meta.bbox,
-        encoding: if dbf_bytes.is_some() { Some("lossy-utf8".to_string()) } else { None },
+        crs,
+        crs_confidence,
+        encoding,
     }
 }
 
@@ -257,6 +304,7 @@ fn extract_shp_metadata(input: &[u8], file_name: &str, file_size: f64) -> Result
         fields: vec![],
         bbox: shp.bbox,
         crs: None,
+        crs_confidence: None,
         encoding: None,
         field_policy: FieldPolicy {
             total_field_count: 0,
@@ -279,7 +327,7 @@ struct DbfMetadata {
     record_count: usize,
 }
 
-fn parse_dbf_lossy(input: &[u8]) -> DbfMetadata {
+fn parse_dbf_with_encoding(input: &[u8], encoding: Option<&'static Encoding>) -> DbfMetadata {
     if input.len() < 32 {
         return DbfMetadata { fields: vec![], total_field_count: 0, record_count: 0 };
     }
@@ -294,7 +342,7 @@ fn parse_dbf_lossy(input: &[u8]) -> DbfMetadata {
     while offset + 32 <= descriptor_end && input[offset] != 0x0D {
         let descriptor = &input[offset..offset + 32];
         let raw_name_end = descriptor[..11].iter().position(|byte| *byte == 0).unwrap_or(11);
-        let name = String::from_utf8_lossy(&descriptor[..raw_name_end]).trim().to_string();
+        let name = decode_bytes(&descriptor[..raw_name_end], encoding);
         let field_type = match descriptor[11] as char {
             'N' | 'F' | 'B' | 'Y' | 'O' => "number",
             'L' => "boolean",
@@ -332,7 +380,7 @@ fn parse_dbf_lossy(input: &[u8]) -> DbfMetadata {
         for (field_index, (_, _, length)) in descriptors.iter().enumerate().take(fields.len()) {
             let field_end = (field_offset + *length).min(input.len());
             if field_offset < field_end {
-                let sample = String::from_utf8_lossy(&input[field_offset..field_end]).trim().to_string();
+                let sample = decode_bytes(&input[field_offset..field_end], encoding);
                 if !sample.is_empty() && fields[field_index].sample.len() < MAX_SAMPLES {
                     fields[field_index].sample.push(Value::String(sample));
                 }
@@ -345,6 +393,16 @@ fn parse_dbf_lossy(input: &[u8]) -> DbfMetadata {
     fields.truncate(MAX_FIELDS);
 
     DbfMetadata { fields, total_field_count, record_count }
+}
+
+fn decode_bytes(bytes: &[u8], encoding: Option<&'static Encoding>) -> String {
+    match encoding {
+        Some(enc) => {
+            let (decoded, _, _) = enc.decode(bytes);
+            decoded.trim().to_string()
+        }
+        None => String::from_utf8_lossy(bytes).trim().to_string(),
+    }
 }
 
 struct ShpHeaderMetadata {
@@ -397,6 +455,7 @@ fn build_single_feature_metadata(feature: &geojson::Feature, file_name: &str, fi
     }
 
     let bbox = calculate_bbox_from_geometry(feature.geometry.as_ref());
+    let (crs, crs_confidence) = detect_crs(bbox);
 
     GeoSurgicalMetadata {
         file_type: "geojson".to_string(),
@@ -408,7 +467,8 @@ fn build_single_feature_metadata(feature: &geojson::Feature, file_name: &str, fi
             included_field_count: fields.len(),
             truncated: false,
         },
-        crs: detect_crs(bbox),
+        crs,
+        crs_confidence,
         encoding: Some("UTF-8".to_string()),
         bbox,
         fields,
@@ -438,6 +498,7 @@ fn build_lossy_binary_metadata(input: &[u8], file_name: &str, file_size: f64, pa
         fields,
         bbox: None,
         crs: None,
+        crs_confidence: None,
         encoding: Some("lossy-utf8".to_string()),
         field_policy: FieldPolicy {
             total_field_count,
@@ -574,13 +635,250 @@ fn visit_coords(geom: &geojson::Geometry, visitor: &mut dyn FnMut(f64, f64)) {
     }
 }
 
-fn detect_crs(bbox: Option<[f64; 4]>) -> Option<String> {
-    let [min_x, min_y, max_x, max_y] = bbox?;
+fn detect_crs(bbox: Option<[f64; 4]>) -> (Option<String>, Option<String>) {
+    let Some([min_x, min_y, max_x, max_y]) = bbox else {
+        return (None, None);
+    };
     if min_x >= -180.0 && max_x <= 180.0 && min_y >= -90.0 && max_y <= 90.0 {
-        Some("EPSG:4326".to_string())
+        (Some("EPSG:4326".to_string()), Some("heuristic".to_string()))
+    } else {
+        (None, None)
+    }
+}
+
+fn parse_crs_from_prj(prj_bytes: &[u8]) -> (Option<String>, Option<String>) {
+    let wkt = String::from_utf8_lossy(prj_bytes);
+    // AUTHORITY tag = authoritative
+    if let Some(epsg) = extract_authority_epsg(&wkt) {
+        return (Some(format!("EPSG:{}", epsg)), Some("authoritative".to_string()));
+    }
+    // WKT name pattern = heuristic
+    if let Some(epsg) = extract_epsg_from_wkt_name(&wkt) {
+        return (Some(epsg), Some("heuristic".to_string()));
+    }
+    (None, None)
+}
+
+fn extract_epsg_from_wkt_name(wkt: &str) -> Option<String> {
+    let upper = wkt.to_uppercase();
+
+    // GEOGCS name patterns
+    let known_mappings: &[(&str, &str)] = &[
+        ("GCS_WGS_1984", "EPSG:4326"),
+        ("WGS_84", "EPSG:4326"),
+        ("GCS_CHINA_GEODETIC_COORDINATE_SYSTEM_2000", "EPSG:4490"),
+        ("CGCS_2000", "EPSG:4490"),
+        ("GCS_BEIJING_1954", "EPSG:4214"),
+        ("BEIJING_1954", "EPSG:4214"),
+        ("GCS_XIAN_1980", "EPSG:4610"),
+        ("XIAN_1980", "EPSG:4610"),
+        ("GCS_WGS_1972", "EPSG:4322"),
+        ("WGS_1972", "EPSG:4322"),
+        ("GCS_NORTH_AMERICAN_1983", "EPSG:4269"),
+        ("NAD_1983", "EPSG:4269"),
+        ("GCS_ETRS_1989", "EPSG:4258"),
+        ("ETRS_1989", "EPSG:4258"),
+        ("GCS_JGD2000", "EPSG:4612"),
+        ("JGD_2000", "EPSG:4612"),
+        ("GCS_JGD2011", "EPSG:6668"),
+        ("JGD_2011", "EPSG:6668"),
+        ("GCS_PULKOVO_1942", "EPSG:4284"),
+        ("PULKOVO_1942", "EPSG:4284"),
+        ("GCS_PULKOVO_1995", "EPSG:4200"),
+        ("PULKOVO_1995", "EPSG:4200"),
+        ("GCS_KOREAN_1985", "EPSG:4162"),
+        ("KOREA_1985", "EPSG:4162"),
+        ("GCS_TOKYO", "EPSG:4301"),
+        ("TOKYO", "EPSG:4301"),
+        ("GCS_HONG_KONG_1980", "EPSG:4611"),
+        ("HONG_KONG_1980", "EPSG:4611"),
+    ];
+
+    for (name, epsg) in known_mappings {
+        if upper.contains(name) {
+            return Some(epsg.to_string());
+        }
+    }
+
+    // PROJCS patterns: UTM zone detection
+    if let Some(epsg) = extract_utm_zone(&upper) {
+        return Some(epsg);
+    }
+
+    // PROJCS patterns: Chinese Gauss-Kruger zone detection
+    if let Some(epsg) = extract_chinese_gk_zone(&upper) {
+        return Some(epsg);
+    }
+
+    // Web Mercator
+    if upper.contains("WEB_MERCATOR") || upper.contains("WEB MERCATOR") {
+        return Some("EPSG:3857".to_string());
+    }
+
+    None
+}
+
+/// Extract EPSG from UTM zone patterns in PROJCS name.
+/// Matches "UTM_ZONE_51N", "UTM Zone 51", etc.
+fn extract_utm_zone(upper_wkt: &str) -> Option<String> {
+    let patterns = ["UTM_ZONE_", "UTM ZONE "];
+    for pat in patterns {
+        if let Some(pos) = upper_wkt.find(pat) {
+            let after = &upper_wkt[pos + pat.len()..];
+            let zone_str: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(zone) = zone_str.parse::<u32>() {
+                if (1..=60).contains(&zone) {
+                    let is_south = upper_wkt.contains("SOUTH") || upper_wkt.ends_with("_S");
+                    let base: u32 = if is_south { 32700 } else { 32600 };
+                    return Some(format!("EPSG:{}", base + zone));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Extract EPSG from Chinese Gauss-Kruger zone patterns.
+/// CGCS2000 3-degree GK zones: EPSG 4547-4553 (zones 25-31)
+/// CGCS2000 6-degree GK zones: EPSG 4526-4533 (zones 13-20)
+fn extract_chinese_gk_zone(upper_wkt: &str) -> Option<String> {
+    // CGCS2000 3-degree GK zone
+    if upper_wkt.contains("CGCS_2000") && upper_wkt.contains("3_DEGREE") {
+        if let Some(zone) = extract_zone_number(upper_wkt) {
+            if (25..=45).contains(&zone) {
+                return Some(format!("EPSG:{}", 4524 + zone));
+            }
+        }
+    }
+    // CGCS2000 6-degree GK zone
+    if upper_wkt.contains("CGCS_2000") && (upper_wkt.contains("GK_ZONE") || upper_wkt.contains("GK ZONE")) {
+        if let Some(zone) = extract_zone_number(upper_wkt) {
+            if (13..=23).contains(&zone) {
+                return Some(format!("EPSG:{}", 4513 + zone));
+            }
+        }
+    }
+    // Beijing 1954 3-degree GK zone
+    if upper_wkt.contains("BEIJING_1954") && upper_wkt.contains("3_DEGREE") {
+        if let Some(zone) = extract_zone_number(upper_wkt) {
+            if (25..=45).contains(&zone) {
+                return Some(format!("EPSG:{}", 2421 + zone));
+            }
+        }
+    }
+    // Xian 1980 3-degree GK zone
+    if upper_wkt.contains("XIAN_1980") && upper_wkt.contains("3_DEGREE") {
+        if let Some(zone) = extract_zone_number(upper_wkt) {
+            if (25..=45).contains(&zone) {
+                return Some(format!("EPSG:{}", 2380 + zone));
+            }
+        }
+    }
+    None
+}
+
+/// Extract a zone number from a WKT name (last sequence of digits).
+fn extract_zone_number(wkt: &str) -> Option<u32> {
+    // Find the last sequence of digits in the string
+    let mut last_num = String::new();
+    let mut in_num = false;
+    for c in wkt.chars() {
+        if c.is_ascii_digit() {
+            last_num.push(c);
+            in_num = true;
+        } else if in_num {
+            break;
+        }
+    }
+    last_num.parse().ok()
+}
+
+fn extract_authority_epsg(wkt: &str) -> Option<String> {
+    // Find AUTHORITY["EPSG","XXXX"] or AUTHORITY["epsg","XXXX"]
+    let upper = wkt.to_uppercase();
+    let marker = "AUTHORITY[\"EPSG\"";
+    let pos = upper.find(marker)?;
+    let after = &wkt[pos + marker.len()..];
+    // Skip whitespace and comma
+    let after = after.trim_start().strip_prefix(',')?;
+    let after = after.trim_start();
+    // Expect "XXXX"
+    let after = after.strip_prefix('"')?;
+    let end = after.find('"')?;
+    let code = &after[..end];
+    // Validate it's a number
+    if code.chars().all(|c| c.is_ascii_digit()) && !code.is_empty() {
+        Some(code.to_string())
     } else {
         None
     }
+}
+
+fn resolve_encoding(cpg_bytes: Option<&[u8]>, dbf_bytes: Option<&[u8]>) -> Option<String> {
+    // 1. .cpg file takes priority
+    if let Some(cpg) = cpg_bytes {
+        let label = String::from_utf8_lossy(cpg).trim().to_string();
+        if !label.is_empty() {
+            return Some(label);
+        }
+    }
+    // 2. DBF header Language Driver ID (byte 29) fallback
+    if let Some(dbf) = dbf_bytes {
+        if let Some(enc) = infer_encoding_from_dbf_header(dbf) {
+            return Some(enc.name().to_lowercase());
+        }
+    }
+    // 3. Lossy fallback when DBF exists
+    if dbf_bytes.is_some() {
+        return Some("lossy-utf8".to_string());
+    }
+    None
+}
+
+fn resolve_encoding_for_label(cpg_bytes: &[u8]) -> Option<&'static Encoding> {
+    let binding = String::from_utf8_lossy(cpg_bytes);
+    let label = binding.trim();
+    if label.is_empty() {
+        return None;
+    }
+    Encoding::for_label(label.as_bytes())
+}
+
+/// Infer encoding from DBF header byte 29 (Language Driver ID / code page).
+/// Reference: dBASE Level 7 LDID specification.
+fn infer_encoding_from_dbf_header(dbf_bytes: &[u8]) -> Option<&'static Encoding> {
+    if dbf_bytes.len() < 32 {
+        return None;
+    }
+    let ldid = dbf_bytes[29];
+    let label = match ldid {
+        0x01 => "cp437",        // DOS US
+        0x02 => "cp850",        // DOS Multilingual
+        0x03 => "windows-1252", // Windows ANSI
+        0x04 => "windows-1252", // Windows ANSI (alternate)
+        0x20 => "gbk",          // GBK / CP936 (Chinese)
+        0x57 => "windows-1252", // Windows ANSI (some DBF7)
+        0x58 => "big5",         // Windows-950 (Traditional Chinese)
+        0x59 => "euc-kr",       // Windows-949 (Korean)
+        0x63 => "shift_jis",    // Shift_JIS (Japanese)
+        0x64 => "euc-jp",       // EUC-JP (Japanese)
+        0x6A => "utf-8",        // UTF-8
+        0x7B => "macintosh",    // Macintosh CP10000
+        0xC8 => "windows-1250", // Windows-1250 (Central European)
+        0xC9 => "windows-1251", // Windows-1251 (Cyrillic)
+        0xCA => "windows-1253", // Windows-1253 (Greek)
+        0xCB => "windows-1254", // Windows-1254 (Turkish)
+        0xCC => "windows-1255", // Windows-1255 (Hebrew)
+        0xCD => "windows-1256", // Windows-1256 (Arabic)
+        0xCE => "windows-1257", // Windows-1257 (Baltic)
+        0xCF => "windows-1258", // Windows-1258 (Vietnamese)
+        0xD3 => "gbk",          // GBK (Chinese, alternate)
+        0xD4 => "big5",         // Big5 (Chinese, alternate)
+        0xD5 => "euc-kr",       // EUC-KR (Korean, alternate)
+        0xD6 => "shift_jis",    // Shift_JIS (Japanese, alternate)
+        _ => return None,
+    };
+    Encoding::for_label(label.as_bytes())
 }
 
 use wasm_bindgen::JsError;

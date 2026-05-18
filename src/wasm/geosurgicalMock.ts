@@ -134,6 +134,7 @@ function createBinaryMockMetadata(context: MetadataInputContext, extension: stri
       featureCount: null,
       fields: [],
       bbox: null,
+      crs: null,
       encoding: null,
     }] : undefined,
   };

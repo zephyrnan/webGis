@@ -54,10 +54,47 @@ export class MockBrainGateway implements BrainGateway {
     }
 
     if (mentionsCrsTransform(normalized)) {
+      const to = detectCrsTarget(normalized);
       operations.push({
         action: 'transform_crs',
-        from: input.metadata.crs ?? 'EPSG:4326',
-        to: 'GCJ-02',
+        from: to === 'GCJ-02' ? (input.metadata.crs ?? 'EPSG:4326') : 'EPSG:4326',
+        to,
+      });
+    }
+
+    if (mentionsSimplify(normalized)) {
+      operations.push({
+        action: 'simplify',
+        tolerance: extractTolerance(normalized),
+        preserve_topology: true,
+      });
+    }
+
+    if (mentionsFieldCalculate(normalized)) {
+      const { targetField, operation, operands } = extractFieldCalc(normalized);
+      if (targetField) {
+        operations.push({
+          action: 'field_calculate',
+          target_field: targetField,
+          operation,
+          operands,
+        });
+      }
+    }
+
+    if (mentionsValidateGeometry(normalized)) {
+      operations.push({
+        action: 'validate_geometry',
+        mode: normalized.includes('修复') || normalized.includes('fix') ? 'check_and_fix' : 'check',
+      });
+    }
+
+    if (mentionsFixEncoding(normalized)) {
+      const fromEncoding = extractEncoding(normalized);
+      operations.push({
+        action: 'fix_encoding',
+        from: fromEncoding,
+        to: 'utf-8',
       });
     }
 
@@ -116,8 +153,102 @@ function mentionsCrsTransform(command: string) {
   return command.includes('火星')
     || command.includes('gcj')
     || command.includes('mars coordinate')
+    || command.includes('3857')
+    || command.includes('mercator')
+    || command.includes('投影')
+    || command.includes('反纠偏')
+    || command.includes('反向')
     || command.includes('convert')
     || command.includes('transform');
+}
+
+function detectCrsTarget(command: string): 'EPSG:3857' | 'EPSG:4326' | 'GCJ-02' {
+  if (command.includes('3857') || command.includes('mercator') || command.includes('投影')) return 'EPSG:3857';
+  if (command.includes('反纠偏') || command.includes('反向') || command.includes('4326')) return 'EPSG:4326';
+  return 'GCJ-02';
+}
+
+function mentionsSimplify(command: string) {
+  return command.includes('简化') || command.includes('抽稀') || command.includes('simplify') || command.includes('reduce vertices') || command.includes('thin');
+}
+
+function extractTolerance(command: string): number {
+  const match = command.match(/(\d+\.?\d*)/);
+  if (match) {
+    const val = parseFloat(match[1]);
+    if (val > 0 && val < 1) return val;
+  }
+  return 0.0001;
+}
+
+function mentionsFieldCalculate(command: string) {
+  return command.includes('计算')
+    || command.includes('求密度')
+    || command.includes('除以')
+    || command.includes('乘以')
+    || command.includes('calculate')
+    || command.includes('density')
+    || command.includes('divide')
+    || command.includes('multiply');
+}
+
+function extractFieldCalc(command: string): { targetField: string | null; operation: 'add' | 'subtract' | 'multiply' | 'divide'; operands: [string, string] } {
+  let operation: 'add' | 'subtract' | 'multiply' | 'divide' = 'add';
+  if (command.includes('除') || command.includes('divide')) operation = 'divide';
+  else if (command.includes('乘') || command.includes('multiply')) operation = 'multiply';
+  else if (command.includes('减') || command.includes('subtract')) operation = 'subtract';
+
+  let targetField: string | null = null;
+  if (command.includes('密度') || command.includes('density')) targetField = 'density';
+
+  const operands: [string, string] = ['0', '0'];
+  if (operation === 'divide' && (command.includes('密度') || command.includes('density'))) {
+    operands[0] = 'population';
+    operands[1] = 'area';
+  }
+
+  return { targetField, operation, operands };
+}
+
+function mentionsValidateGeometry(command: string) {
+  return command.includes('校验')
+    || command.includes('检查几何')
+    || command.includes('修复几何')
+    || command.includes('validate')
+    || command.includes('check geometry')
+    || command.includes('fix geometry');
+}
+
+function mentionsFixEncoding(command: string) {
+  return command.includes('乱码')
+    || command.includes('编码')
+    || command.includes('encoding')
+    || command.includes('fix_encoding')
+    || command.includes('fix encoding')
+    || command.includes('转码')
+    || command.includes('gbk')
+    || command.includes('gb2312')
+    || command.includes('big5')
+    || command.includes('windows-125')
+    || command.includes('shift_jis')
+    || command.includes('euc-')
+    || command.includes('iso-8859');
+}
+
+function extractEncoding(command: string): string {
+  if (command.includes('gbk')) return 'gbk';
+  if (command.includes('gb2312')) return 'gb2312';
+  if (command.includes('big5')) return 'big5';
+  if (command.includes('windows-1256')) return 'windows-1256';
+  if (command.includes('windows-1251')) return 'windows-1251';
+  if (command.includes('windows-1252')) return 'windows-1252';
+  if (command.includes('windows-125')) return 'windows-1256';
+  if (command.includes('shift_jis') || command.includes('shift-jis')) return 'shift_jis';
+  if (command.includes('euc-jp')) return 'euc-jp';
+  if (command.includes('euc-kr')) return 'euc-kr';
+  if (command.includes('iso-8859-1')) return 'iso-8859-1';
+  if (command.includes('iso-8859')) return 'iso-8859-1';
+  return 'unknown';
 }
 
 function mentionsExport(command: string) {

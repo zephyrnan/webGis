@@ -25,6 +25,16 @@ pub enum Operation {
     TransformCrs { from: String, to: String },
     #[serde(rename = "fix_encoding")]
     FixEncoding { from: String, to: String },
+    #[serde(rename = "simplify")]
+    Simplify { tolerance: f64, preserve_topology: Option<bool> },
+    #[serde(rename = "field_calculate")]
+    FieldCalculate {
+        target_field: String,
+        operation: String,
+        operands: Vec<String>,
+    },
+    #[serde(rename = "validate_geometry")]
+    ValidateGeometry { mode: String },
     #[serde(rename = "export")]
     Export { format: String },
     #[serde(rename = "noop")]
@@ -75,6 +85,8 @@ pub struct GeoSurgicalMetadata {
     pub fields: Vec<GeoField>,
     pub bbox: Option<[f64; 4]>,
     pub crs: Option<String>,
+    #[serde(rename = "crsConfidence", skip_serializing_if = "Option::is_none")]
+    pub crs_confidence: Option<String>,
     pub encoding: Option<String>,
     #[serde(rename = "fieldPolicy")]
     pub field_policy: FieldPolicy,
@@ -90,6 +102,9 @@ pub struct LayerInfo {
     pub feature_count: Option<usize>,
     pub fields: Vec<GeoField>,
     pub bbox: Option<[f64; 4]>,
+    pub crs: Option<String>,
+    #[serde(rename = "crsConfidence", skip_serializing_if = "Option::is_none")]
+    pub crs_confidence: Option<String>,
     pub encoding: Option<String>,
 }
 

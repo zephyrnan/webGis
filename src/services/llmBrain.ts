@@ -2,6 +2,7 @@ import type { GeoSurgicalAst } from '../types/ast';
 import type { GeoSurgicalMetadata } from '../types/metadata';
 import type { BrainGateway } from './brain';
 import { BrainPlanningError } from './brain';
+import { validateAst } from './astValidation';
 
 const SYSTEM_PROMPT = `You are a REST API that outputs ONLY raw JSON. Do NOT wrap the JSON in markdown blocks (like \`\`\`json). Do NOT add any conversational text before or after the JSON. Your output must start with '{' and end with '}'.
 
@@ -22,6 +23,9 @@ const SYSTEM_PROMPT = `You are a REST API that outputs ONLY raw JSON. Do NOT wra
 - rename_field: 重命名字段。参数: from, to
 - transform_crs: 坐标系转换。参数: from, to (支持 GCJ-02, EPSG:4326, EPSG:3857)
 - fix_encoding: 编码重构。参数 schema: {"action":"fix_encoding","from":"推测的原始编码","to":"utf-8"}
+- simplify: 几何抽稀（减少顶点数量）。参数: tolerance (容差, 如 0.0001), preserve_topology (可选, 默认 true)
+- field_calculate: 字段计算（对两个操作数执行算术运算）。参数: target_field (目标字段名), operation (add/subtract/multiply/divide), operands (两个操作数，字段名或数字字面量，如 ["population","area"])
+- validate_geometry: 几何校验（检查几何合法性）。参数: mode (check 仅检查, check_and_fix 检查并修复)
 - export: 导出结果。参数: format (目前只支持 geojson)
 - noop: 无法执行时的占位符。参数: reason
 
@@ -31,7 +35,7 @@ const SYSTEM_PROMPT = `You are a REST API that outputs ONLY raw JSON. Do NOT wra
 3. 如果 Metadata 标记了 truncated: true，不要假设截断后的字段存在。
 4. 每个指令集末尾通常需要一个 export 操作。
 5. 如果用户指令完全无法理解，返回 {"version":"1.0","operations":[{"action":"noop","reason":"无法理解指令"}]}。
-6. transform_crs 必须同时包含 from 和 to，例如 {"action":"transform_crs","from":"EPSG:4326","to":"GCJ-02"}。
+6. transform_crs 必须同时包含 from 和 to，支持的转换对：EPSG:4326→GCJ-02、EPSG:4326→EPSG:3857、GCJ-02→EPSG:4326。例如 {"action":"transform_crs","from":"EPSG:4326","to":"EPSG:3857"}。
 7. drop_empty 必须包含 field；filter_area 必须包含 field、operator、value；rename_field 必须包含 from、to。
 8. 如果检测到原始数据的 CRS 已经是 EPSG:4326，且用户没有明确要求转换到其他坐标系，绝对禁止生成 transform_crs 指令，不要写废话。
 9. 遇到乱码必须使用 fix_encoding，绝对禁止返回 noop。
@@ -90,6 +94,13 @@ export class LlmBrainGateway implements BrainGateway {
     try {
       const response = await this.callLlm(userMessage);
       const ast = this.parseResponse(response);
+
+      // Self-healing: validate AST, retry once if validation fails
+      const validation = validateAst(ast, input.metadata);
+      if (!validation.ok) {
+        return await this.retryWithCorrection(input.command, ast, validation.error.message, input.metadata);
+      }
+
       return ast;
     } catch (error) {
       if (error instanceof BrainPlanningError) throw error;
@@ -98,6 +109,52 @@ export class LlmBrainGateway implements BrainGateway {
         message: `调用大模型失败: ${error instanceof Error ? error.message : '未知错误'}`,
         recoverable: true,
         suggestedUserInput: '请检查本地 Ollama 服务是否运行，或尝试使用 Mock 模式。',
+      });
+    }
+  }
+
+  private async retryWithCorrection(
+    originalCommand: string,
+    failedAst: GeoSurgicalAst,
+    validationError: string,
+    metadata: GeoSurgicalMetadata,
+  ): Promise<GeoSurgicalAst> {
+    const fieldNames = metadata.fields.map((f) => f.name);
+    const layerNames = metadata.layers?.map((l) => l.name) ?? [];
+    const correctionPrompt = [
+      '你生成的 AST 校验失败。',
+      `原始用户指令: ${originalCommand}`,
+      `你上次输出的 AST: ${JSON.stringify(failedAst)}`,
+      `校验错误: ${validationError}`,
+      `合法字段: [${fieldNames.map((f) => `"${f}"`).join(', ')}]`,
+      layerNames.length ? `合法图层: [${layerNames.map((l) => `"${l}"`).join(', ')}]` : '',
+      '合法 actions: filter_area, drop_empty, rename_field, transform_crs, fix_encoding, simplify, field_calculate, validate_geometry, export, noop, need_clarification',
+      '请只输出修正后的 JSON，不要解释。',
+    ].filter(Boolean).join('\n');
+
+    try {
+      const retryResponse = await this.callLlm(correctionPrompt);
+      const retryAst = this.parseResponse(retryResponse);
+
+      // Validate the retry result — if it still fails, throw the original error
+      const retryValidation = validateAst(retryAst, metadata);
+      if (!retryValidation.ok) {
+        throw new BrainPlanningError({
+          code: 'AST_VALIDATION_FAILED',
+          message: `AST 校验失败（已重试一次）: ${validationError}`,
+          recoverable: true,
+          suggestedUserInput: '请检查指令中的字段名和操作是否正确，或简化指令后重试。',
+        });
+      }
+
+      return retryAst;
+    } catch (error) {
+      if (error instanceof BrainPlanningError) throw error;
+      throw new BrainPlanningError({
+        code: 'AST_VALIDATION_FAILED',
+        message: `AST 校验失败（重试时 LLM 调用出错）: ${validationError}`,
+        recoverable: true,
+        suggestedUserInput: '请检查指令中的字段名和操作是否正确。',
       });
     }
   }
@@ -294,6 +351,34 @@ export class LlmBrainGateway implements BrainGateway {
 
     if (action === 'export') {
       return { action: 'export', format: 'geojson' };
+    }
+
+    if (action === 'simplify') {
+      return {
+        action: 'simplify',
+        tolerance: typeof op.tolerance === 'number' && op.tolerance > 0 ? op.tolerance : 0.0001,
+        preserve_topology: typeof op.preserve_topology === 'boolean' ? op.preserve_topology : true,
+      };
+    }
+
+    if (action === 'field_calculate') {
+      const operands = Array.isArray(op.operands) && op.operands.length === 2
+        ? [String(op.operands[0]), String(op.operands[1])]
+        : ['0', '0'];
+      const validOps = ['add', 'subtract', 'multiply', 'divide'];
+      return {
+        action: 'field_calculate',
+        target_field: typeof op.target_field === 'string' && op.target_field ? op.target_field : 'result',
+        operation: validOps.includes(String(op.operation)) ? String(op.operation) as 'add' | 'subtract' | 'multiply' | 'divide' : 'add',
+        operands: operands as [string, string],
+      };
+    }
+
+    if (action === 'validate_geometry') {
+      return {
+        action: 'validate_geometry',
+        mode: op.mode === 'check' ? 'check' : 'check_and_fix',
+      };
     }
 
     if (action === 'need_clarification') {

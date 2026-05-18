@@ -1,3 +1,4 @@
+import { Code } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import type { GeoSurgicalAst } from '../types/ast';
 
@@ -11,14 +12,15 @@ export function AstPreview({ ast, risks }: AstPreviewProps) {
 
   if (!ast) {
     return (
-      <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-500">
+      <section className="flex items-center gap-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-500">
+        <Code className="size-5 shrink-0 text-slate-600" />
         {t('ast.empty')}
       </section>
     );
   }
 
   return (
-    <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
+    <section className="animate-fade-in space-y-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-white">{t('ast.title')}</h2>
         <span className="rounded-full bg-cyan-950 px-2 py-1 text-xs text-cyan-200">v{ast.version}</span>

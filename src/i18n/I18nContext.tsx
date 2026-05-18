@@ -42,6 +42,13 @@ export function useI18n() {
 
 function getInitialLanguage(): Language {
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === 'zh' || stored === 'en') return stored;
-  return navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  const valid: Language[] = ['zh', 'en', 'ja', 'ko', 'fr', 'es'];
+  if (stored && (valid as string[]).includes(stored)) return stored as Language;
+  const lang = navigator.language.toLowerCase();
+  if (lang.startsWith('zh')) return 'zh';
+  if (lang.startsWith('ja')) return 'ja';
+  if (lang.startsWith('ko')) return 'ko';
+  if (lang.startsWith('fr')) return 'fr';
+  if (lang.startsWith('es')) return 'es';
+  return 'en';
 }

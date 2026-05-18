@@ -1,0 +1,165 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://geosurgical.dev/schemas/ast-schema.json",
+  "title": "GeoSurgical AST",
+  "description": "GeoSurgical AST 是自然语言、前端校验、Worker 协议、Rust 执行引擎之间的唯一契约。新增 action 时必须同步更新：本文件、src/types/ast.ts、src/services/astValidation.ts (Zod)、src-wasm/src/types.rs (Rust enum)、src/services/llmBrain.ts (LLM prompt)。",
+  "type": "object",
+  "required": ["version", "operations"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["1.0"],
+      "description": "AST 协议版本，当前固定为 1.0"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/operation"
+      },
+      "description": "按顺序执行的操作列表"
+    },
+    "target_layer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "目标图层名称（可选，多图层 ZIP Shapefile 时使用）"
+    }
+  },
+  "$defs": {
+    "operation": {
+      "description": "所有可用的 GeoSurgical 操作",
+      "oneOf": [
+        { "$ref": "#/$defs/filter_area" },
+        { "$ref": "#/$defs/drop_empty" },
+        { "$ref": "#/$defs/rename_field" },
+        { "$ref": "#/$defs/transform_crs" },
+        { "$ref": "#/$defs/fix_encoding" },
+        { "$ref": "#/$defs/simplify" },
+        { "$ref": "#/$defs/field_calculate" },
+        { "$ref": "#/$defs/validate_geometry" },
+        { "$ref": "#/$defs/export" },
+        { "$ref": "#/$defs/noop" },
+        { "$ref": "#/$defs/need_clarification" }
+      ]
+    },
+    "filter_area": {
+      "type": "object",
+      "description": "按数值字段过滤要素",
+      "required": ["action", "field", "operator", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "filter_area" },
+        "field": { "type": "string", "minLength": 1, "description": "要过滤的数值字段名" },
+        "operator": { "type": "string", "enum": [">=", ">", "<=", "<", "="], "description": "比较运算符" },
+        "value": { "type": "number", "description": "比较阈值" }
+      }
+    },
+    "drop_empty": {
+      "type": "object",
+      "description": "删除指定字段为空的要素",
+      "required": ["action", "field"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "drop_empty" },
+        "field": { "type": "string", "minLength": 1, "description": "要检查的字段名" }
+      }
+    },
+    "rename_field": {
+      "type": "object",
+      "description": "重命名字段",
+      "required": ["action", "from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "rename_field" },
+        "from": { "type": "string", "minLength": 1, "description": "原字段名" },
+        "to": { "type": "string", "minLength": 1, "description": "新字段名" }
+      }
+    },
+    "transform_crs": {
+      "type": "object",
+      "description": "坐标系转换（当前支持 WGS-84 → GCJ-02）",
+      "required": ["action", "from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "transform_crs" },
+        "from": { "type": "string", "minLength": 1, "description": "源坐标系，如 EPSG:4326" },
+        "to": { "type": "string", "enum": ["GCJ-02", "EPSG:4326", "EPSG:3857"], "description": "目标坐标系" }
+      }
+    },
+    "fix_encoding": {
+      "type": "object",
+      "description": "编码修复（将属性值从源编码转换为 UTF-8）",
+      "required": ["action", "from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "fix_encoding" },
+        "from": { "type": "string", "minLength": 1, "description": "源编码，如 GBK、windows-1256" },
+        "to": { "type": "string", "enum": ["utf-8"], "description": "目标编码，当前只支持 utf-8" }
+      }
+    },
+    "simplify": {
+      "type": "object",
+      "description": "几何抽稀（Ramer-Douglas-Peucker 算法减少顶点数量）",
+      "required": ["action", "tolerance"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "simplify" },
+        "tolerance": { "type": "number", "exclusiveMinimum": 0, "description": "抽稀容差，单位与坐标系一致（度或米），如 0.0001" },
+        "preserve_topology": { "type": "boolean", "default": true, "description": "是否保持拓扑关系，默认 true" }
+      }
+    },
+    "field_calculate": {
+      "type": "object",
+      "description": "字段计算（对两个操作数执行算术运算，结果写入目标字段）",
+      "required": ["action", "target_field", "operation", "operands"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "field_calculate" },
+        "target_field": { "type": "string", "minLength": 1, "description": "结果写入的字段名（新建或覆盖）" },
+        "operation": { "type": "string", "enum": ["add", "subtract", "multiply", "divide"], "description": "算术运算类型" },
+        "operands": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2, "description": "两个操作数，可以是字段名或数字字面量" }
+      }
+    },
+    "validate_geometry": {
+      "type": "object",
+      "description": "几何校验（检查几何合法性，可选自动修复）",
+      "required": ["action", "mode"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "validate_geometry" },
+        "mode": { "type": "string", "enum": ["check", "check_and_fix"], "description": "check 仅检查，check_and_fix 检查并尝试修复" }
+      }
+    },
+    "export": {
+      "type": "object",
+      "description": "导出处理结果",
+      "required": ["action", "format"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "export" },
+        "format": { "type": "string", "enum": ["geojson"], "description": "导出格式，当前只支持 geojson" }
+      }
+    },
+    "noop": {
+      "type": "object",
+      "description": "无法执行时的占位符",
+      "required": ["action", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "noop" },
+        "reason": { "type": "string", "minLength": 1, "description": "无法执行的原因" }
+      }
+    },
+    "need_clarification": {
+      "type": "object",
+      "description": "需要用户补充信息",
+      "required": ["action", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "need_clarification" },
+        "reason": { "type": "string", "minLength": 1, "description": "需要澄清的原因" }
+      }
+    }
+  }
+}

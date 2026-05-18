@@ -8,7 +8,7 @@ export function formatBytes(bytes: number) {
   return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-export function formatBbox(bbox: [number, number, number, number] | null) {
-  if (!bbox) return '未检测';
+export function formatBbox(bbox: [number, number, number, number] | null, fallback = 'N/A') {
+  if (!bbox) return fallback;
   return bbox.map((value) => value.toFixed(5)).join(', ');
 }

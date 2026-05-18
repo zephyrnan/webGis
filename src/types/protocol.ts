@@ -101,4 +101,9 @@ export type WorkerResponse =
       type: 'ERROR';
       taskId: TaskId;
       error: StructuredError;
+    }
+  | {
+      type: 'ENGINE_STATUS';
+      mode: 'real' | 'mock';
+      wasmError?: string;
     };

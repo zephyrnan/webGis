@@ -1,0 +1,25 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "id": "A-001", "name": "Block A", "area": 120, "population": 5000 },
+      "geometry": { "type": "Polygon", "coordinates": [[[113.91, 22.45], [113.92, 22.45], [113.92, 22.46], [113.91, 22.46], [113.91, 22.45]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "B-002", "name": "", "area": 0, "population": 0 },
+      "geometry": { "type": "Polygon", "coordinates": [[[113.93, 22.47], [113.94, 22.47], [113.94, 22.48], [113.93, 22.48], [113.93, 22.47]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "C-003", "name": "Block C", "area": 500, "population": 12000 },
+      "geometry": { "type": "Polygon", "coordinates": [[[113.95, 22.49], [113.96, 22.49], [113.96, 22.50], [113.95, 22.50], [113.95, 22.49]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "D-004", "name": "Block D", "area": 200, "population": 8000 },
+      "geometry": { "type": "Polygon", "coordinates": [[[113.97, 22.51], [113.99, 22.51], [113.98, 22.52], [113.97, 22.52], [113.99, 22.51], [113.97, 22.51]]] }
+    }
+  ]
+}

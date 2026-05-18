@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Copy, Download } from 'lucide-react';
+import { Check, Copy, Download, Inbox } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import type { HistoryEntry } from '../types/history';
 import type { SurgeryResult } from '../types/protocol';
@@ -56,14 +56,15 @@ export function ResultPanel({ result, history, historyIndex, onUndo, onRedo, onJ
 
   if (!result) {
     return (
-      <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-500">
+      <section className="flex items-center gap-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-500">
+        <Inbox className="size-5 shrink-0 text-slate-600" />
         {t('result.empty')}
       </section>
     );
   }
 
   return (
-    <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
+    <section className="animate-fade-in space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
       <div className="flex items-start justify-between">
         <h2 className="text-lg font-semibold text-white">{result.fileName}</h2>
         {size > 0 && (
@@ -117,7 +118,9 @@ export function ResultPanel({ result, history, historyIndex, onUndo, onRedo, onJ
 
 function formatResultLog(log: string, t: (key: string, params?: Record<string, string | number>) => string) {
   if (log.startsWith('operation:')) {
-    return t('log.operation', { operation: log.slice('operation:'.length) });
+    const rawOp = log.slice('operation:'.length);
+    const translatedOp = t(`operation.${rawOp}`);
+    return t('log.operation', { operation: translatedOp === `operation.${rawOp}` ? rawOp : translatedOp });
   }
 
   if (log === 'summary:shapefile_mock') {

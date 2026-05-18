@@ -1,3 +1,4 @@
+import { Activity } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import type { ProgressEvent } from '../types/protocol';
 
@@ -13,16 +14,19 @@ export function ProgressTimeline({ items }: ProgressTimelineProps) {
       <h2 className="font-semibold text-white">{t('progress.title')}</h2>
       <div className="mt-4 space-y-3">
         {items.length === 0 ? (
-          <p className="text-sm text-slate-500">{t('progress.empty')}</p>
+          <div className="flex items-center gap-3 text-sm text-slate-500">
+            <Activity className="size-5 shrink-0 text-slate-600" />
+            {t('progress.empty')}
+          </div>
         ) : items.map((item, index) => (
-          <div key={`${item.phase}-${index}`} className="rounded-2xl bg-slate-950/70 p-3 text-sm">
+          <div key={`${item.phase}-${index}`} className="animate-fade-in rounded-2xl bg-slate-950/70 p-3 text-sm">
             <div className="flex items-center justify-between gap-4">
               <span className="font-medium text-slate-100">{item.messageKey ? t(item.messageKey, item.params) : item.message}</span>
               <span className="text-xs uppercase text-cyan-300">{item.phase}</span>
             </div>
             {typeof item.percent === 'number' ? (
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800">
-                <div className="h-full rounded-full bg-cyan-400" style={{ width: `${item.percent}%` }} />
+                <div className="h-full rounded-full bg-cyan-400 transition-all duration-500" style={{ width: `${item.percent}%` }} />
               </div>
             ) : null}
           </div>

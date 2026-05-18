@@ -205,7 +205,7 @@ export function CommandPalette({
           onKeyDown={handleKeyDown}
         />
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute left-4 right-4 z-10 mt-1 max-h-48 overflow-auto rounded-xl border border-slate-700 bg-slate-900 shadow-xl shadow-black/40">
+          <div className="absolute left-4 right-4 z-10 mt-1 max-h-48 overflow-auto rounded-xl border border-slate-700 bg-slate-900/95 shadow-xl shadow-black/40 backdrop-blur-sm">
             {suggestions.map((s, i) => (
               <button
                 key={`${s.kind}-${s.label}`}
@@ -230,6 +230,9 @@ export function CommandPalette({
                 <span className="truncate font-mono">{s.label}</span>
               </button>
             ))}
+            <div className="border-t border-slate-700/50 px-3 py-1.5 text-[10px] text-slate-600">
+              <kbd className="rounded bg-slate-800 px-1 py-0.5">Tab</kbd> / <kbd className="rounded bg-slate-800 px-1 py-0.5">Enter</kbd> accept · <kbd className="rounded bg-slate-800 px-1 py-0.5">Esc</kbd> dismiss
+            </div>
           </div>
         )}
       </div>

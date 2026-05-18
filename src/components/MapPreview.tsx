@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Table2 } from 'lucide-react';
+import { Layers, Table2 } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import Map from 'ol/Map';
 import View from 'ol/View';
@@ -28,8 +28,9 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
   const popupRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const resultLayerRef = useRef<VectorLayer<VectorSource> | WebGLVectorLayer | null>(null);
-  const originalLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
+  const originalLayerRef = useRef<VectorLayer<VectorSource> | WebGLVectorLayer | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
+  const [originalOpacity, setOriginalOpacity] = useState(0.6);
   const [useWebGL, setUseWebGL] = useState(true);
   const [selectedProps, setSelectedProps] = useState<Record<string, unknown> | null>(null);
   const [showTable, setShowTable] = useState(false);
@@ -183,17 +184,31 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       }),
     });
 
-    const layer = new VectorLayer({
-      source,
-      style: new Style({
-        stroke: new Stroke({ color: '#f97316', width: 2 }),
-        fill: new Fill({ color: 'rgba(249, 115, 22, 0.15)' }),
-      }),
-    });
+    let layer: VectorLayer<VectorSource> | WebGLVectorLayer;
+    if (useWebGL) {
+      layer = new WebGLVectorLayer({
+        source,
+        style: {
+          'stroke-color': '#f97316',
+          'stroke-width': 2,
+          'fill-color': 'rgba(249, 115, 22, 0.15)',
+        },
+        opacity: originalOpacity,
+      });
+    } else {
+      layer = new VectorLayer({
+        source,
+        style: new Style({
+          stroke: new Stroke({ color: '#f97316', width: 2 }),
+          fill: new Fill({ color: 'rgba(249, 115, 22, 0.15)' }),
+        }),
+        opacity: originalOpacity,
+      });
+    }
 
     map.addLayer(layer);
     originalLayerRef.current = layer;
-  }, [showOriginal, originalGeoJson]);
+  }, [showOriginal, originalGeoJson, useWebGL, originalOpacity]);
 
   const geoJsonContent = result?.kind === 'geojson' ? result.content : null;
   const featureCount = geoJsonContent
@@ -238,17 +253,35 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
             </button>
           )}
           {originalGeoJson && (
-            <button
-              className={`rounded-full px-3 py-1 text-xs transition ${
-                showOriginal
-                  ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
-                  : 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200'
-              }`}
-              type="button"
-              onClick={() => setShowOriginal(!showOriginal)}
-            >
-              {showOriginal ? t('map.hideOriginal') : t('map.showOriginal')}
-            </button>
+            <>
+              <button
+                className={`rounded-full px-3 py-1 text-xs transition ${
+                  showOriginal
+                    ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200'
+                }`}
+                type="button"
+                onClick={() => setShowOriginal(!showOriginal)}
+              >
+                {showOriginal ? t('map.hideOriginal') : t('map.showOriginal')}
+              </button>
+              {showOriginal && (
+                <div className="flex items-center gap-1.5">
+                  <Layers className="size-3 text-slate-500" />
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={originalOpacity}
+                    onChange={(e) => setOriginalOpacity(parseFloat(e.target.value))}
+                    className="w-16 accent-orange-400"
+                    title={t('map.opacity')}
+                  />
+                  <span className="text-[10px] text-slate-500 w-7">{Math.round(originalOpacity * 100)}%</span>
+                </div>
+              )}
+            </>
           )}
           <button
             className={`rounded-full px-3 py-1 text-xs transition ${

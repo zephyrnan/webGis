@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
+import type { Language } from '../i18n/locales';
 import type { GeoSurgicalAst } from '../types/ast';
 import type { StructuredError } from '../types/protocol';
 import { buildShortcutTags } from '../services/shortcutTags';
@@ -52,17 +53,31 @@ export function AppShell() {
                 {t('app.subtitle')}
               </p>
             </div>
-            <div className="inline-flex rounded-full border border-slate-700 bg-slate-950/70 p-1 text-sm">
-              {(['zh', 'en'] as const).map((item) => (
-                <button
-                  key={item}
-                  className={`rounded-full px-3 py-1.5 transition ${language === item ? 'bg-cyan-400 text-slate-950' : 'text-slate-300 hover:text-white'}`}
-                  type="button"
-                  onClick={() => setLanguage(item)}
-                >
-                  {t(item === 'zh' ? 'language.zh' : 'language.en')}
-                </button>
-              ))}
+            <div className="flex items-center gap-3">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${
+                  worker.engineMode === 'real'
+                    ? 'border-emerald-400/40 bg-emerald-950/40 text-emerald-300'
+                    : worker.engineMode === 'mock'
+                      ? 'border-amber-400/40 bg-amber-950/40 text-amber-300'
+                      : 'border-slate-600 bg-slate-800 text-slate-400'
+                }`}
+                title={worker.wasmError ?? undefined}
+              >
+                <span className={`size-1.5 rounded-full ${
+                  worker.engineMode === 'real' ? 'bg-emerald-400' : worker.engineMode === 'mock' ? 'bg-amber-400' : 'bg-slate-500 animate-pulse'
+                }`} />
+                {t(`engine.${worker.engineMode}`)}
+              </span>
+              <select
+                className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1.5 text-sm text-slate-300 outline-none transition hover:border-cyan-400 focus:border-cyan-400"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as Language)}
+              >
+                {(['zh', 'en', 'ja', 'ko', 'fr', 'es'] as const).map((item) => (
+                  <option key={item} value={item}>{t(`language.${item}`)}</option>
+                ))}
+              </select>
             </div>
           </div>
         </header>

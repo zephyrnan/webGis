@@ -1,9 +1,14 @@
+// AST 单一事实来源：schemas/ast-schema.json
+// 新增 action 时必须同步更新：schema、本文件、astValidation.ts (Zod)、llmBrain.ts (prompt)、src-wasm/src/types.rs (Rust)
 export type GeoOperationAction =
   | 'filter_area'
   | 'drop_empty'
   | 'transform_crs'
   | 'fix_encoding'
   | 'rename_field'
+  | 'simplify'
+  | 'field_calculate'
+  | 'validate_geometry'
   | 'export'
   | 'noop'
   | 'need_clarification';
@@ -38,6 +43,24 @@ export type RenameFieldOperation = {
   to: string;
 };
 
+export type SimplifyOperation = {
+  action: 'simplify';
+  tolerance: number;
+  preserve_topology?: boolean;
+};
+
+export type FieldCalculateOperation = {
+  action: 'field_calculate';
+  target_field: string;
+  operation: 'add' | 'subtract' | 'multiply' | 'divide';
+  operands: [string, string];
+};
+
+export type ValidateGeometryOperation = {
+  action: 'validate_geometry';
+  mode: 'check' | 'check_and_fix';
+};
+
 export type ExportOperation = {
   action: 'export';
   format: 'geojson';
@@ -59,6 +82,9 @@ export type GeoSurgicalOperation =
   | TransformCrsOperation
   | FixEncodingOperation
   | RenameFieldOperation
+  | SimplifyOperation
+  | FieldCalculateOperation
+  | ValidateGeometryOperation
   | ExportOperation
   | NoopOperation
   | NeedClarificationOperation;

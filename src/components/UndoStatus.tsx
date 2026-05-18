@@ -20,11 +20,13 @@ export function UndoStatus({ history, currentIndex, onUndo, onRedo, onJumpTo }: 
 
   const formatTime = (ts: number) => {
     const diff = Math.round((Date.now() - ts) / 1000);
-    if (diff < 5) return 'just now';
-    if (diff < 60) return `${diff}s ago`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 5) return t('undo.justNow');
+    if (diff < 60) return t('undo.secondsAgo', { n: diff });
+    if (diff < 3600) return t('undo.minutesAgo', { n: Math.floor(diff / 60) });
+    return t('undo.hoursAgo', { n: Math.floor(diff / 3600) });
   };
+
+  const translateOp = (action: string) => t(`operation.${action}`);
 
   return (
     <div className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
@@ -55,7 +57,7 @@ export function UndoStatus({ history, currentIndex, onUndo, onRedo, onJumpTo }: 
       <div className="max-h-48 space-y-1 overflow-auto pr-1">
         {history.map((entry, index) => {
           const isCurrent = index === currentIndex;
-          const ops = entry.ast.operations.map((op) => op.action).join(', ');
+          const ops = entry.ast.operations.map((op) => translateOp(op.action)).join(', ');
           const inputCount = entry.resultSnapshot.summary.inputFeatureCount;
           const outputCount = entry.resultSnapshot.summary.outputFeatureCount;
 
@@ -76,7 +78,7 @@ export function UndoStatus({ history, currentIndex, onUndo, onRedo, onJumpTo }: 
               </div>
               {inputCount != null && outputCount != null && (
                 <span className="mt-0.5 text-slate-500">
-                  {inputCount} → {outputCount} features
+                  {t('undo.featureChange', { input: inputCount, output: outputCount })}
                 </span>
               )}
             </button>

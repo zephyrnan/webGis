@@ -28,6 +28,7 @@ export type GeoSurgicalMetadata = {
   fields: GeoField[];
   bbox: [number, number, number, number] | null;
   crs: string | null;
+  crsConfidence?: 'authoritative' | 'heuristic' | 'none';
   encoding: string | null;
   fieldPolicy: FieldPolicy;
   warnings: GeoWarning[];
@@ -39,5 +40,7 @@ export type LayerInfo = {
   featureCount: number | null;
   fields: GeoField[];
   bbox: [number, number, number, number] | null;
+  crs: string | null;
+  crsConfidence?: 'authoritative' | 'heuristic' | 'none';
   encoding: string | null;
 };

@@ -1,3 +1,4 @@
+// Zod schema 与 schemas/ast-schema.json 保持同步。新增 action 时同步更新此处和 schema 文件。
 import { z } from 'zod';
 import type { GeoSurgicalAst, GeoSurgicalOperation } from '../types/ast';
 import type { GeoSurgicalMetadata } from '../types/metadata';
@@ -23,6 +24,21 @@ const operationSchema = z.discriminatedUnion('action', [
     action: z.literal('fix_encoding'),
     from: z.string().min(1),
     to: z.literal('utf-8'),
+  }),
+  z.object({
+    action: z.literal('simplify'),
+    tolerance: z.number().finite().positive(),
+    preserve_topology: z.boolean().optional(),
+  }),
+  z.object({
+    action: z.literal('field_calculate'),
+    target_field: z.string().min(1),
+    operation: z.enum(['add', 'subtract', 'multiply', 'divide']),
+    operands: z.tuple([z.string(), z.string()]),
+  }),
+  z.object({
+    action: z.literal('validate_geometry'),
+    mode: z.enum(['check', 'check_and_fix']),
   }),
   z.object({
     action: z.literal('rename_field'),
@@ -61,7 +77,7 @@ export function validateAst(ast: unknown, metadata: GeoSurgicalMetadata): Valida
       ok: false,
       error: {
         code: 'AST_SCHEMA_INVALID',
-        message: formatZodIssue(parsed.error.issues[0]) ?? 'AST 格式不正确。',
+        message: formatZodIssue(parsed.error.issues[0]) ?? 'validation.invalidAstFormat',
         recoverable: true,
       },
     };
@@ -86,6 +102,18 @@ export function validateAst(ast: unknown, metadata: GeoSurgicalMetadata): Valida
     if (operation.action === 'transform_crs') {
       risks.push('ast.riskTransform');
     }
+
+    if (operation.action === 'simplify') {
+      risks.push('ast.riskSimplify');
+    }
+
+    if (operation.action === 'field_calculate') {
+      risks.push('ast.riskFieldCalc');
+    }
+
+    if (operation.action === 'validate_geometry' && operation.mode === 'check_and_fix') {
+      risks.push('ast.riskValidateGeometry');
+    }
   }
 
   // Validate target_layer exists in metadata.layers
@@ -96,7 +124,7 @@ export function validateAst(ast: unknown, metadata: GeoSurgicalMetadata): Valida
         ok: false,
         error: {
           code: 'LAYER_NOT_FOUND',
-          message: `图层 ${parsed.data.target_layer} 不在当前文件的图层目录中。`,
+          message: `validation.layerNotInFile?layer=${parsed.data.target_layer}`,
           recoverable: true,
         },
       };
@@ -118,9 +146,9 @@ function missingField(field: string): ValidationResult {
     ok: false,
     error: {
       code: 'FIELD_NOT_IN_METADATA',
-      message: `字段 ${field} 不在当前 Metadata 摘要中。`,
+      message: `validation.fieldNotInMetadata?field=${field}`,
       recoverable: true,
-      suggestedUserInput: '请确认字段名，或先搜索字段。',
+      suggestedUserInput: 'validation.confirmFieldName',
     },
   };
 }

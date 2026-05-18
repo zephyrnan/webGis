@@ -3,6 +3,7 @@ use geojson::GeoJson;
 use js_sys::Function;
 use wasm_bindgen::JsError;
 use zip::ZipArchive;
+use geo::Simplify;
 use crate::types::*;
 
 pub fn execute(
@@ -61,13 +62,134 @@ pub fn execute(
                 if to == "GCJ-02" && from == "EPSG:4326" {
                     apply_gcj02_transform(&mut fc);
                     logs.push("operation:transform_crs (WGS-84 → GCJ-02)".to_string());
+                } else if to == "EPSG:3857" && from == "EPSG:4326" {
+                    apply_wgs84_to_mercator(&mut fc);
+                    logs.push("operation:transform_crs (WGS-84 → Web Mercator)".to_string());
+                } else if to == "EPSG:4326" && from == "GCJ-02" {
+                    apply_gcj02_to_wgs84(&mut fc);
+                    logs.push("operation:transform_crs (GCJ-02 → WGS-84)".to_string());
                 } else {
                     warnings.push(format!("UNSUPPORTED_CRS_TRANSFORM: {} -> {}", from, to));
                     logs.push(format!("operation:transform_crs (跳过: {} -> {})", from, to));
                 }
             }
             Operation::FixEncoding { from, to } => {
-                logs.push(format!("operation:fix_encoding ({} → {})", from, to));
+                let encoding = encoding_rs::Encoding::for_label(from.as_bytes());
+
+                // If input is a ZIP, re-read raw DBF bytes for real byte-level transcoding
+                if is_zip_input(input, file_name) {
+                    match reencode_zip_dbf(input, ast.target_layer.as_deref(), encoding, to) {
+                        Ok((reencoded_fc, transcode_log)) => {
+                            fc = reencoded_fc;
+                            logs.push(transcode_log);
+                        }
+                        Err(e) => {
+                            warnings.push(format!("FIX_ENCODING_FAILED: {:?}", e));
+                            // Fall back to in-place string cleanup
+                            let (cleaned, log) = fix_encoding_inplace(&mut fc, encoding, from, to);
+                            logs.push(log);
+                            if cleaned > 0 {
+                                warnings.push("FALLBACK_STRING_CLEANUP".to_string());
+                            }
+                        }
+                    }
+                } else {
+                    // Non-ZIP: do in-place string cleanup
+                    let (_cleaned, log) = fix_encoding_inplace(&mut fc, encoding, from, to);
+                    logs.push(log);
+                    if encoding.is_none() {
+                        warnings.push(format!("ENCODING_NOT_RECOGNIZED: {}", from));
+                    }
+                }
+            }
+            Operation::Simplify { tolerance, preserve_topology: _ } => {
+                let mut simplified_count = 0u32;
+                let mut total_before = 0usize;
+                let mut total_after = 0usize;
+
+                for feature in &mut fc.features {
+                    if let Some(ref mut geom) = feature.geometry {
+                        let before = count_geojson_coords(geom);
+                        total_before += before;
+                        if let Some(simplified) = simplify_geojson_geometry(geom, *tolerance) {
+                            let after = count_geojson_coords(&simplified);
+                            total_after += after;
+                            simplified_count += 1;
+                            *geom = simplified;
+                        } else {
+                            total_after += before;
+                        }
+                    }
+                }
+
+                logs.push(format!(
+                    "operation:simplify (tolerance={}, {} geometries, vertices {} → {})",
+                    tolerance, simplified_count, total_before, total_after
+                ));
+            }
+            Operation::FieldCalculate { target_field, operation, operands } => {
+                let mut calculated = 0u32;
+                let mut errors = 0u32;
+
+                for feature in &mut fc.features {
+                    let a = resolve_operand(feature, &operands[0]);
+                    let b = resolve_operand(feature, &operands[1]);
+
+                    match (a, b) {
+                        (Some(va), Some(vb)) => {
+                            let result = match operation.as_str() {
+                                "add" => Some(va + vb),
+                                "subtract" => Some(va - vb),
+                                "multiply" => Some(va * vb),
+                                "divide" => if vb.abs() > f64::EPSILON { Some(va / vb) } else { None },
+                                _ => None,
+                            };
+                            if let Some(val) = result {
+                                if let Some(ref mut props) = feature.properties {
+                                    props.insert(target_field.clone(), serde_json::json!(val));
+                                    calculated += 1;
+                                }
+                            } else {
+                                errors += 1;
+                            }
+                        }
+                        _ => errors += 1,
+                    }
+                }
+
+                logs.push(format!(
+                    "operation:field_calculate ({} = {} {} {}, calculated: {}, errors: {})",
+                    target_field, operands[0], operation, operands[1], calculated, errors
+                ));
+                if errors > 0 {
+                    warnings.push(format!("FIELD_CALCULATE_ERRORS: {} features had missing/invalid operands", errors));
+                }
+            }
+            Operation::ValidateGeometry { mode } => {
+                let mut invalid_count = 0u32;
+                let mut fixed_count = 0u32;
+
+                for feature in &mut fc.features {
+                    if let Some(ref geom) = feature.geometry {
+                        if !is_valid_geojson_geometry(geom) {
+                            invalid_count += 1;
+                            if mode == "check_and_fix" {
+                                if let Some(fixed) = try_fix_geometry(geom) {
+                                    feature.geometry = Some(fixed);
+                                    fixed_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                logs.push(format!(
+                    "operation:validate_geometry (mode={}, invalid: {}, fixed: {})",
+                    mode, invalid_count, fixed_count
+                ));
+                if invalid_count > 0 && mode == "check" {
+                    warnings.push(format!("INVALID_GEOMETRY: {} features have invalid geometry", invalid_count));
+                }
             }
             Operation::Export { format } => {
                 logs.push(format!("operation:export ({})", format));
@@ -180,8 +302,8 @@ fn parse_zipped_feature_collection(input: &[u8], target_layer: Option<&str>) -> 
         layer_bytes.iter()
             .filter(|(_, (shp, _))| shp.is_some())
             .max_by_key(|(_, (shp, dbf))| {
-                let shp_count = shp.as_ref().and_then(|s| parse_shp_feature_count(s)).unwrap_or(0);
-                let dbf_count = dbf.as_ref().and_then(|d| parse_dbf_record_count(d)).unwrap_or(0);
+                let shp_count = shp.as_ref().and_then(|s| count_shp_features(s)).unwrap_or(0);
+                let dbf_count = dbf.as_ref().and_then(|d| count_dbf_records(d)).unwrap_or(0);
                 shp_count.max(dbf_count)
             })
     };
@@ -366,18 +488,6 @@ fn is_zip_input(input: &[u8], file_name: &str) -> bool {
     input.starts_with(&[0x50, 0x4B]) || file_name.to_lowercase().ends_with(".zip")
 }
 
-fn parse_shp_feature_count(shp_bytes: &[u8]) -> Option<usize> {
-    if shp_bytes.len() < 100 { return None; }
-    // SHP header: file length at bytes 24-27 (16-bit words), but feature count is not in header.
-    // We count shapes by iterating the shape index. For a lightweight check, return None.
-    None
-}
-
-fn parse_dbf_record_count(dbf_bytes: &[u8]) -> Option<usize> {
-    if dbf_bytes.len() < 12 { return None; }
-    Some(u32::from_le_bytes([dbf_bytes[4], dbf_bytes[5], dbf_bytes[6], dbf_bytes[7]]) as usize)
-}
-
 fn operation_name(op: &Operation) -> &str {
     match op {
         Operation::FilterArea { .. } => "filter_area",
@@ -385,6 +495,9 @@ fn operation_name(op: &Operation) -> &str {
         Operation::RenameField { .. } => "rename_field",
         Operation::TransformCrs { .. } => "transform_crs",
         Operation::FixEncoding { .. } => "fix_encoding",
+        Operation::Simplify { .. } => "simplify",
+        Operation::FieldCalculate { .. } => "field_calculate",
+        Operation::ValidateGeometry { .. } => "validate_geometry",
         Operation::Export { .. } => "export",
         Operation::Noop { .. } => "noop",
         Operation::NeedClarification { .. } => "need_clarification",
@@ -493,6 +606,130 @@ fn transform_lng(x: f64, y: f64) -> f64 {
     ret + (150.0 * (x / 12.0 * std::f64::consts::PI).sin() + 300.0 * (x / 30.0 * std::f64::consts::PI).sin()) * 2.0 / 3.0
 }
 
+// --- WGS-84 (EPSG:4326) → Web Mercator (EPSG:3857) ---
+
+fn wgs84_to_mercator(lat: f64, lng: f64) -> (f64, f64) {
+    let x = lng * 20037508.34 / 180.0;
+    let y = ((90.0 + lat) * std::f64::consts::PI / 360.0).tan().ln() / std::f64::consts::PI * 20037508.34;
+    (x, y)
+}
+
+fn apply_wgs84_to_mercator(fc: &mut geojson::FeatureCollection) {
+    for feature in &mut fc.features {
+        if let Some(ref mut geom) = feature.geometry {
+            transform_geometry_wgs84_to_mercator(geom);
+        }
+    }
+}
+
+fn transform_geometry_wgs84_to_mercator(geom: &mut geojson::Geometry) {
+    use geojson::Value;
+    match &mut geom.value {
+        Value::Point(ref mut coords) => {
+            let (x, y) = wgs84_to_mercator(coords[1], coords[0]);
+            coords[0] = x;
+            coords[1] = y;
+        }
+        Value::MultiPoint(ref mut coords) | Value::LineString(ref mut coords) => {
+            for c in coords.iter_mut() {
+                let (x, y) = wgs84_to_mercator(c[1], c[0]);
+                c[0] = x;
+                c[1] = y;
+            }
+        }
+        Value::MultiLineString(ref mut rings) | Value::Polygon(ref mut rings) => {
+            for ring in rings.iter_mut() {
+                for c in ring.iter_mut() {
+                    let (x, y) = wgs84_to_mercator(c[1], c[0]);
+                    c[0] = x;
+                    c[1] = y;
+                }
+            }
+        }
+        Value::MultiPolygon(ref mut polygons) => {
+            for polygon in polygons.iter_mut() {
+                for ring in polygon.iter_mut() {
+                    for c in ring.iter_mut() {
+                        let (x, y) = wgs84_to_mercator(c[1], c[0]);
+                        c[0] = x;
+                        c[1] = y;
+                    }
+                }
+            }
+        }
+        Value::GeometryCollection(ref mut geometries) => {
+            for g in geometries.iter_mut() {
+                transform_geometry_wgs84_to_mercator(g);
+            }
+        }
+    }
+}
+
+// --- GCJ-02 → WGS-84 (iterative inverse) ---
+
+fn gcj02_to_wgs84(lat: f64, lng: f64) -> (f64, f64) {
+    // Iterative approximation: converge within ~6 iterations for <1m accuracy
+    let mut wlat = lat;
+    let mut wlng = lng;
+    for _ in 0..6 {
+        let (clat, clng) = wgs84_to_gcj02(wlat, wlng);
+        wlat += lat - clat;
+        wlng += lng - clng;
+    }
+    (wlat, wlng)
+}
+
+fn apply_gcj02_to_wgs84(fc: &mut geojson::FeatureCollection) {
+    for feature in &mut fc.features {
+        if let Some(ref mut geom) = feature.geometry {
+            transform_geometry_gcj02_to_wgs84(geom);
+        }
+    }
+}
+
+fn transform_geometry_gcj02_to_wgs84(geom: &mut geojson::Geometry) {
+    use geojson::Value;
+    match &mut geom.value {
+        Value::Point(ref mut coords) => {
+            let (lat, lng) = gcj02_to_wgs84(coords[1], coords[0]);
+            coords[0] = lng;
+            coords[1] = lat;
+        }
+        Value::MultiPoint(ref mut coords) | Value::LineString(ref mut coords) => {
+            for c in coords.iter_mut() {
+                let (lat, lng) = gcj02_to_wgs84(c[1], c[0]);
+                c[0] = lng;
+                c[1] = lat;
+            }
+        }
+        Value::MultiLineString(ref mut rings) | Value::Polygon(ref mut rings) => {
+            for ring in rings.iter_mut() {
+                for c in ring.iter_mut() {
+                    let (lat, lng) = gcj02_to_wgs84(c[1], c[0]);
+                    c[0] = lng;
+                    c[1] = lat;
+                }
+            }
+        }
+        Value::MultiPolygon(ref mut polygons) => {
+            for polygon in polygons.iter_mut() {
+                for ring in polygon.iter_mut() {
+                    for c in ring.iter_mut() {
+                        let (lat, lng) = gcj02_to_wgs84(c[1], c[0]);
+                        c[0] = lng;
+                        c[1] = lat;
+                    }
+                }
+            }
+        }
+        Value::GeometryCollection(ref mut geometries) => {
+            for g in geometries.iter_mut() {
+                transform_geometry_gcj02_to_wgs84(g);
+            }
+        }
+    }
+}
+
 fn emit_progress(callback: &Option<Function>, phase: &str, message: &str, percent: u32) {
     if let Some(ref cb) = callback {
         let obj = js_sys::Object::new();
@@ -506,4 +743,414 @@ fn emit_progress(callback: &Option<Function>, phase: &str, message: &str, percen
 fn to_output_filename(file_name: &str) -> String {
     let base = file_name.rsplit_once('.').map(|(b, _)| b).unwrap_or(file_name);
     format!("{}.geosurgical.geojson", base)
+}
+
+fn fix_encoding_inplace(
+    fc: &mut geojson::FeatureCollection,
+    encoding: Option<&'static encoding_rs::Encoding>,
+    from: &str,
+    _to: &str,
+) -> (u32, String) {
+    let mut cleaned_count = 0u32;
+    let mut total_strings = 0u32;
+
+    for feature in &mut fc.features {
+        if let Some(ref mut props) = feature.properties {
+            for (_key, val) in props.iter_mut() {
+                if let Some(s) = val.as_str() {
+                    total_strings += 1;
+                    let cleaned = clean_encoded_string(s, encoding);
+                    if cleaned != s {
+                        cleaned_count += 1;
+                        *val = serde_json::Value::String(cleaned);
+                    }
+                }
+            }
+        }
+    }
+
+    let log = if let Some(enc) = encoding {
+        format!(
+            "operation:fix_encoding ({} → utf-8, encoding: {}, cleaned {}/{} strings, in-place fallback)",
+            from, enc.name(), cleaned_count, total_strings
+        )
+    } else {
+        format!(
+            "operation:fix_encoding ({} → utf-8, encoding not recognized, cleaned {}/{} strings, in-place fallback)",
+            from, cleaned_count, total_strings
+        )
+    };
+
+    (cleaned_count, log)
+}
+
+fn clean_encoded_string(s: &str, encoding: Option<&'static encoding_rs::Encoding>) -> String {
+    if s.is_ascii() {
+        return s.to_string();
+    }
+
+    let cleaned: String = s.chars().filter(|&c| c != '\u{FFFD}').collect();
+    let cleaned = cleaned.trim().to_string();
+
+    if let Some(_enc) = encoding {
+        // Source bytes are already lost from lossy UTF-8 conversion;
+        // we can only remove replacement characters here.
+    }
+
+    cleaned
+}
+
+fn reencode_zip_dbf(
+    input: &[u8],
+    target_layer: Option<&str>,
+    encoding: Option<&'static encoding_rs::Encoding>,
+    _to: &str,
+) -> Result<(geojson::FeatureCollection, String), JsError> {
+    let enc = encoding.ok_or_else(|| JsError::new("ENCODING_NOT_RECOGNIZED"))?;
+
+    let cursor = Cursor::new(input);
+    let mut archive = ZipArchive::new(cursor)
+        .map_err(|e| JsError::new(&format!("ZIP 解析失败: {}", e)))?;
+
+    // Collect shp/dbf pairs
+    let mut layer_bytes: std::collections::HashMap<String, (Option<Vec<u8>>, Option<Vec<u8>>)> = std::collections::HashMap::new();
+
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index)
+            .map_err(|e| JsError::new(&format!("ZIP 条目读取失败: {}", e)))?;
+        let entry_name = file.name().to_string();
+        let lower = entry_name.to_lowercase();
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|e| JsError::new(&format!("ZIP 条目读取失败: {}", e)))?;
+
+        if lower.ends_with(".shp") || lower.ends_with(".dbf") {
+            let stem = stem_name(&entry_name);
+            let entry = layer_bytes.entry(stem).or_insert((None, None));
+            if lower.ends_with(".shp") {
+                entry.0 = Some(bytes);
+            } else {
+                entry.1 = Some(bytes);
+            }
+        }
+    }
+
+    // Find target layer
+    let matched = if let Some(target) = target_layer {
+        layer_bytes.iter().find(|(stem, (shp, _))| stem.eq_ignore_ascii_case(target) && shp.is_some())
+    } else {
+        layer_bytes.iter()
+            .filter(|(_, (shp, _))| shp.is_some())
+            .max_by_key(|(_, (shp, dbf))| {
+                let shp_count = shp.as_ref().and_then(|s| count_shp_features(s)).unwrap_or(0);
+                let dbf_count = dbf.as_ref().and_then(|d| count_dbf_records(d)).unwrap_or(0);
+                shp_count.max(dbf_count)
+            })
+    };
+
+    let (_, (shp_bytes, dbf_bytes)) = matched
+        .ok_or_else(|| JsError::new("ZIP 中未找到匹配的 .shp 文件"))?;
+
+    let shp = shp_bytes.as_ref().unwrap();
+    let dbf = dbf_bytes.as_deref();
+
+    // Re-parse DBF with the correct encoding
+    let mut fc = parse_shapefile_feature_collection(shp, dbf)?;
+
+    // Re-parse DBF records with the specified encoding and overwrite properties
+    if let Some(dbf_bytes) = dbf {
+        let reencoded_records = parse_dbf_records_with_encoding(dbf_bytes, enc);
+        for (i, feature) in fc.features.iter_mut().enumerate() {
+            if let Some(record) = reencoded_records.get(i) {
+                feature.properties = Some(record.clone());
+            }
+        }
+    }
+
+    let count = fc.features.len();
+    let log = format!(
+        "operation:fix_encoding (re-encoded {} features with {})",
+        count, enc.name()
+    );
+
+    Ok((fc, log))
+}
+
+fn parse_dbf_records_with_encoding(
+    input: &[u8],
+    encoding: &'static encoding_rs::Encoding,
+) -> Vec<serde_json::Map<String, serde_json::Value>> {
+    if input.len() < 32 {
+        return Vec::new();
+    }
+
+    let record_count = u32::from_le_bytes([input[4], input[5], input[6], input[7]]) as usize;
+    let header_len = u16::from_le_bytes([input[8], input[9]]) as usize;
+    let record_len = u16::from_le_bytes([input[10], input[11]]) as usize;
+    let descriptor_end = header_len.saturating_sub(1).min(input.len());
+    let mut descriptors = Vec::new();
+    let mut offset = 32;
+
+    while offset + 32 <= descriptor_end && input[offset] != 0x0D {
+        let descriptor = &input[offset..offset + 32];
+        let raw_name_end = descriptor[..11].iter().position(|byte| *byte == 0).unwrap_or(11);
+        // Decode field name with specified encoding
+        let (name, _, _) = encoding.decode(&descriptor[..raw_name_end]);
+        let name = name.trim().to_string();
+        let field_type = descriptor[11] as char;
+        let length = descriptor[16] as usize;
+        if !name.is_empty() {
+            descriptors.push((name, field_type, length));
+        }
+        offset += 32;
+    }
+
+    let mut records = Vec::with_capacity(record_count);
+    for row_index in 0..record_count {
+        let row_start = header_len + row_index * record_len;
+        if row_start >= input.len() {
+            break;
+        }
+
+        let mut props = serde_json::Map::new();
+        let mut field_offset = row_start + 1;
+        for (name, field_type, length) in &descriptors {
+            let field_end = (field_offset + *length).min(input.len());
+            if field_offset < field_end {
+                let raw_bytes = &input[field_offset..field_end];
+                // Decode value with specified encoding
+                let (decoded, _, _) = encoding.decode(raw_bytes);
+                let value = decoded.trim().to_string();
+                props.insert(name.clone(), parse_dbf_typed_value(&value, *field_type));
+            }
+            field_offset += *length;
+        }
+        records.push(props);
+    }
+
+    records
+}
+
+fn parse_dbf_typed_value(value: &str, field_type: char) -> serde_json::Value {
+    if value.is_empty() {
+        return serde_json::Value::Null;
+    }
+
+    match field_type {
+        'N' | 'F' | 'B' | 'Y' | 'O' => value
+            .parse::<f64>()
+            .ok()
+            .and_then(serde_json::Number::from_f64)
+            .map(serde_json::Value::Number)
+            .unwrap_or_else(|| serde_json::Value::String(value.to_string())),
+        'L' => match value.to_lowercase().as_str() {
+            "t" | "true" | "y" | "yes" | "1" => serde_json::Value::Bool(true),
+            "f" | "false" | "n" | "no" | "0" => serde_json::Value::Bool(false),
+            _ => serde_json::Value::String(value.to_string()),
+        },
+        _ => serde_json::Value::String(value.to_string()),
+    }
+}
+
+fn count_shp_features(shp_bytes: &[u8]) -> Option<usize> {
+    if shp_bytes.len() < 100 { return None; }
+    let mut count = 0usize;
+    let mut offset = 100usize;
+    while offset + 8 <= shp_bytes.len() {
+        let content_words = i32::from_be_bytes([shp_bytes[offset + 4], shp_bytes[offset + 5], shp_bytes[offset + 6], shp_bytes[offset + 7]]);
+        if content_words <= 0 { break; }
+        let record_size = 8usize.saturating_add((content_words as usize).saturating_mul(2));
+        if offset + record_size > shp_bytes.len() { break; }
+        count += 1;
+        offset += record_size;
+    }
+    Some(count)
+}
+
+fn count_dbf_records(dbf_bytes: &[u8]) -> Option<usize> {
+    if dbf_bytes.len() < 12 { return None; }
+    Some(u32::from_le_bytes([dbf_bytes[4], dbf_bytes[5], dbf_bytes[6], dbf_bytes[7]]) as usize)
+}
+
+fn resolve_operand(feature: &geojson::Feature, operand: &str) -> Option<f64> {
+    // Try as field name first
+    if let Some(val) = feature.properties.as_ref().and_then(|p| p.get(operand)) {
+        if let Some(n) = val.as_f64() {
+            return Some(n);
+        }
+    }
+    // Try as numeric literal
+    operand.parse::<f64>().ok()
+}
+
+fn count_geojson_coords(geom: &geojson::Geometry) -> usize {
+    match &geom.value {
+        geojson::Value::Point(_) => 1,
+        geojson::Value::MultiPoint(c) | geojson::Value::LineString(c) => c.len(),
+        geojson::Value::MultiLineString(rings) | geojson::Value::Polygon(rings) => {
+            rings.iter().map(|r| r.len()).sum()
+        }
+        geojson::Value::MultiPolygon(polys) => {
+            polys.iter().flat_map(|rings| rings.iter()).map(|r| r.len()).sum()
+        }
+        geojson::Value::GeometryCollection(geoms) => {
+            geoms.iter().map(count_geojson_coords).sum()
+        }
+    }
+}
+
+fn simplify_geojson_geometry(geom: &geojson::Geometry, tolerance: f64) -> Option<geojson::Geometry> {
+    let simplified_value = match &geom.value {
+        geojson::Value::LineString(coords) => {
+            let ls = geo_linestring_from_coords(coords);
+            let simplified = ls.simplify(&tolerance);
+            Some(geojson::Value::LineString(geo_ls_to_coords(&simplified)))
+        }
+        geojson::Value::MultiLineString(lines) => {
+            let result: Vec<Vec<Vec<f64>>> = lines.iter().map(|coords| {
+                let ls = geo_linestring_from_coords(coords);
+                let simplified = ls.simplify(&tolerance);
+                geo_ls_to_coords(&simplified)
+            }).collect();
+            Some(geojson::Value::MultiLineString(result))
+        }
+        geojson::Value::Polygon(rings) => {
+            let poly = geo_polygon_from_rings(rings)?;
+            let simplified = poly.simplify(&tolerance);
+            Some(geojson::Value::Polygon(geo_poly_to_rings(&simplified)))
+        }
+        geojson::Value::MultiPolygon(polys) => {
+            let result: Vec<Vec<Vec<Vec<f64>>>> = polys.iter().filter_map(|rings| {
+                let poly = geo_polygon_from_rings(rings)?;
+                let simplified = poly.simplify(&tolerance);
+                Some(geo_poly_to_rings(&simplified))
+            }).collect();
+            Some(geojson::Value::MultiPolygon(result))
+        }
+        _ => None, // Point, MultiPoint, GeometryCollection: skip simplification
+    };
+
+    simplified_value.map(|value| geojson::Geometry { value, bbox: geom.bbox.clone(), foreign_members: geom.foreign_members.clone() })
+}
+
+fn geo_linestring_from_coords(coords: &[Vec<f64>]) -> geo::LineString<f64> {
+    geo::LineString(coords.iter().filter(|c| c.len() >= 2).map(|c| geo::Coord { x: c[0], y: c[1] }).collect())
+}
+
+fn geo_ls_to_coords(ls: &geo::LineString<f64>) -> Vec<Vec<f64>> {
+    ls.0.iter().map(|c| vec![c.x, c.y]).collect()
+}
+
+fn geo_polygon_from_rings(rings: &[Vec<Vec<f64>>]) -> Option<geo::Polygon<f64>> {
+    if rings.is_empty() { return None; }
+    let exterior = geo_linestring_from_coords(&rings[0]);
+    let interiors: Vec<geo::LineString<f64>> = rings[1..].iter().map(|r| geo_linestring_from_coords(r)).collect();
+    Some(geo::Polygon::new(exterior, interiors))
+}
+
+fn geo_poly_to_rings(poly: &geo::Polygon<f64>) -> Vec<Vec<Vec<f64>>> {
+    let mut result = vec![geo_ls_to_coords(poly.exterior())];
+    for interior in poly.interiors() {
+        result.push(geo_ls_to_coords(interior));
+    }
+    result
+}
+
+fn is_valid_geojson_geometry(geom: &geojson::Geometry) -> bool {
+    match &geom.value {
+        geojson::Value::Point(c) => is_valid_coord_slice(c),
+        geojson::Value::MultiPoint(pts) | geojson::Value::LineString(pts) => {
+            pts.iter().all(|c| is_valid_coord_slice(c))
+        }
+        geojson::Value::MultiLineString(rings) | geojson::Value::Polygon(rings) => {
+            rings.iter().all(|ring| ring.iter().all(|c| is_valid_coord_slice(c)))
+        }
+        geojson::Value::MultiPolygon(polys) => {
+            polys.iter().flat_map(|rings| rings.iter()).all(|ring| ring.iter().all(|c| is_valid_coord_slice(c)))
+        }
+        geojson::Value::GeometryCollection(geoms) => {
+            geoms.iter().all(is_valid_geojson_geometry)
+        }
+    }
+}
+
+fn is_valid_coord_slice(c: &[f64]) -> bool {
+    c.len() >= 2 && c[0].is_finite() && c[1].is_finite()
+}
+
+fn try_fix_geometry(geom: &geojson::Geometry) -> Option<geojson::Geometry> {
+    let mut fixed = geom.clone();
+    let mut changed = false;
+
+    match &mut fixed.value {
+        geojson::Value::Polygon(rings) => {
+            for ring in rings.iter_mut() {
+                // Remove NaN/Infinity coords
+                let before_len = ring.len();
+                ring.retain(|c| c.len() >= 2 && c[0].is_finite() && c[1].is_finite());
+                if ring.len() != before_len { changed = true; }
+                // Remove duplicate adjacent points
+                ring.dedup_by(|a, b| a.len() >= 2 && b.len() >= 2 && a[0] == b[0] && a[1] == b[1]);
+                // Close ring if not closed
+                if ring.len() >= 2 {
+                    let first = ring.first().cloned();
+                    let last = ring.last().cloned();
+                    if let (Some(f), Some(l)) = (first, last) {
+                        if f.len() >= 2 && l.len() >= 2 && (f[0] != l[0] || f[1] != l[1]) {
+                            ring.push(f);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            // Remove degenerate rings (less than 4 points)
+            rings.retain(|ring| ring.len() >= 4);
+        }
+        geojson::Value::LineString(coords) => {
+            let before = coords.len();
+            coords.retain(|c| c.len() >= 2 && c[0].is_finite() && c[1].is_finite());
+            if coords.len() != before { changed = true; }
+        }
+        geojson::Value::MultiLineString(lines) => {
+            for line in lines.iter_mut() {
+                let before = line.len();
+                line.retain(|c| c.len() >= 2 && c[0].is_finite() && c[1].is_finite());
+                if line.len() != before { changed = true; }
+            }
+        }
+        geojson::Value::MultiPolygon(polygons) => {
+            for rings in polygons.iter_mut() {
+                for ring in rings.iter_mut() {
+                    let before = ring.len();
+                    ring.retain(|c| c.len() >= 2 && c[0].is_finite() && c[1].is_finite());
+                    if ring.len() != before { changed = true; }
+                    ring.dedup_by(|a, b| a.len() >= 2 && b.len() >= 2 && a[0] == b[0] && a[1] == b[1]);
+                    if ring.len() >= 2 {
+                        let first = ring.first().cloned();
+                        let last = ring.last().cloned();
+                        if let (Some(f), Some(l)) = (first, last) {
+                            if f.len() >= 2 && l.len() >= 2 && (f[0] != l[0] || f[1] != l[1]) {
+                                ring.push(f);
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                rings.retain(|ring| ring.len() >= 4);
+            }
+        }
+        geojson::Value::Point(coords) => {
+            if coords.len() >= 2 && (!coords[0].is_finite() || !coords[1].is_finite()) {
+                return None;
+            }
+        }
+        geojson::Value::MultiPoint(points) => {
+            let before = points.len();
+            points.retain(|c| c.len() >= 2 && c[0].is_finite() && c[1].is_finite());
+            if points.len() != before { changed = true; }
+        }
+        _ => {}
+    }
+
+    if changed { Some(fixed) } else { None }
 }

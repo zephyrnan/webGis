@@ -15,6 +15,7 @@ geojson = "0.24"
 geo = "0.28"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 shapefile = "0.6"
+encoding_rs = "0.8"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["console"] }
 

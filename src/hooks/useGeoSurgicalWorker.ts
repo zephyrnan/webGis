@@ -18,7 +18,10 @@ export type WorkerStatus =
 export function useGeoSurgicalWorker() {
   const workerRef = useRef<Worker | null>(null);
   const taskIdRef = useRef<string | null>(null);
+  const fileRef = useRef<File | null>(null);
   const [status, setStatus] = useState<WorkerStatus>('idle');
+  const [engineMode, setEngineMode] = useState<'real' | 'mock' | 'loading'>('loading');
+  const [wasmError, setWasmError] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<GeoSurgicalMetadata | null>(null);
   const [progress, setProgress] = useState<ProgressEvent[]>([]);
   const [error, setError] = useState<StructuredError | null>(null);
@@ -27,12 +30,18 @@ export function useGeoSurgicalWorker() {
   const [history, setHistory] = useState<HistoryState>({ entries: [], currentIndex: -1 });
   const lastAstRef = useRef<GeoSurgicalAst | null>(null);
 
-  useEffect(() => {
+  const setupWorker = useCallback(() => {
     const worker = new Worker(new URL('../workers/geosurgical.worker.ts', import.meta.url), { type: 'module' });
     workerRef.current = worker;
 
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
       const response = event.data;
+
+      if (response.type === 'ENGINE_STATUS') {
+        setEngineMode(response.mode);
+        setWasmError(response.wasmError ?? null);
+        return;
+      }
 
       if (response.type === 'PROGRESS') {
         setProgress((items) => [...items, response.progress]);
@@ -49,7 +58,6 @@ export function useGeoSurgicalWorker() {
         setResult(response.result);
         setUndo(response.undo);
         setStatus('completed');
-        // Push history entry
         if (lastAstRef.current) {
           setHistory((prev) => {
             const entry: HistoryEntry = {
@@ -85,8 +93,13 @@ export function useGeoSurgicalWorker() {
       setStatus('failed');
     };
 
-    return () => worker.terminate();
+    return worker;
   }, []);
+
+  useEffect(() => {
+    setupWorker();
+    return () => workerRef.current?.terminate();
+  }, [setupWorker]);
 
   const post = useCallback((request: WorkerRequest, transfer?: Transferable[]) => {
     workerRef.current?.postMessage(request, transfer ?? []);
@@ -95,6 +108,7 @@ export function useGeoSurgicalWorker() {
   const uploadFile = useCallback(async (file: File) => {
     const taskId = nanoid();
     taskIdRef.current = taskId;
+    fileRef.current = file;
     setStatus('uploading');
     setMetadata(null);
     setProgress([]);
@@ -131,12 +145,41 @@ export function useGeoSurgicalWorker() {
   }, [post]);
 
   const cancelTask = useCallback(() => {
-    const taskId = taskIdRef.current;
-    if (!taskId) return;
+    const currentFile = fileRef.current;
+
+    // Terminate the worker to immediately stop WASM execution
+    workerRef.current?.terminate();
+    workerRef.current = null;
 
     setStatus('cancelled');
-    post({ type: 'CANCEL_TASK', taskId });
-  }, [post]);
+    setProgress([]);
+    setError(null);
+    lastAstRef.current = null;
+
+    // Rebuild worker for future use
+    setupWorker();
+
+    // Re-upload the file to the new worker so metadata is available
+    if (currentFile) {
+      const reupload = async () => {
+        const taskId = nanoid();
+        taskIdRef.current = taskId;
+        const buffer = await currentFile.arrayBuffer();
+        setStatus('metadata-extracting');
+        post(
+          {
+            type: 'UPLOAD_FILE',
+            taskId,
+            fileName: currentFile.name,
+            fileSize: currentFile.size,
+            buffer,
+          },
+          [buffer],
+        );
+      };
+      void reupload();
+    }
+  }, [post, setupWorker]);
 
   const selectLayer = useCallback((layerName: string) => {
     const taskId = taskIdRef.current;
@@ -201,6 +244,8 @@ export function useGeoSurgicalWorker() {
 
   return useMemo(() => ({
     status,
+    engineMode,
+    wasmError,
     metadata,
     progress,
     error,
@@ -214,5 +259,5 @@ export function useGeoSurgicalWorker() {
     undoHistory,
     redoHistory,
     jumpToHistory,
-  }), [status, metadata, progress, error, result, undo, history, uploadFile, executeAst, cancelTask, selectLayer, undoHistory, redoHistory, jumpToHistory]);
+  }), [status, engineMode, wasmError, metadata, progress, error, result, undo, history, uploadFile, executeAst, cancelTask, selectLayer, undoHistory, redoHistory, jumpToHistory]);
 }

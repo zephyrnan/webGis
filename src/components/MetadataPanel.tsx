@@ -1,3 +1,4 @@
+import { FileSearch } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import type { GeoSurgicalMetadata } from '../types/metadata';
 import { formatBbox, formatBytes } from '../services/formatters';
@@ -13,14 +14,15 @@ export function MetadataPanel({ metadata, selectedLayer, onSelectLayer }: Metada
 
   if (!metadata) {
     return (
-      <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-400">
+      <section className="flex items-center gap-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-400">
+        <FileSearch className="size-5 shrink-0 text-slate-600" />
         {t('metadata.empty')}
       </section>
     );
   }
 
   return (
-    <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
+    <section className="animate-fade-in space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
       <div>
         <h2 className="text-lg font-semibold text-white">{metadata.fileName}</h2>
         <p className="text-sm text-slate-400">{metadata.fileType} · {formatBytes(metadata.fileSize)}</p>
@@ -28,9 +30,14 @@ export function MetadataPanel({ metadata, selectedLayer, onSelectLayer }: Metada
 
       <div className="grid grid-cols-2 gap-3 text-sm">
         <Metric label={t('metadata.featureEstimate')} value={metadata.featureCountEstimate ?? t('metadata.unknown')} />
-        <Metric label="CRS" value={metadata.crs ?? t('metadata.notDetected')} />
+        <Metric
+          label="CRS"
+          value={metadata.crs ?? t('metadata.notDetected')}
+          badge={metadata.crsConfidence ? t(`crsConfidence.${metadata.crsConfidence}`) : undefined}
+          badgeColor={metadata.crsConfidence === 'authoritative' ? 'emerald' : metadata.crsConfidence === 'heuristic' ? 'amber' : 'slate'}
+        />
         <Metric label={t('metadata.encoding')} value={metadata.encoding ?? t('metadata.notDetected')} />
-        <Metric label="BBox" value={formatBbox(metadata.bbox)} />
+        <Metric label="BBox" value={formatBbox(metadata.bbox, t('metadata.notDetected'))} />
       </div>
 
       {metadata.layers && metadata.layers.length > 0 && (
@@ -48,10 +55,18 @@ export function MetadataPanel({ metadata, selectedLayer, onSelectLayer }: Metada
                 type="button"
                 onClick={() => onSelectLayer?.(layer.name)}
               >
-                <span className="font-medium">{layer.name}</span>
-                <span className="ml-2 text-xs text-slate-500">
-                  {layer.featureCount ?? '?'} {t('metadata.featureCount')} · {layer.fields.length} {t('metadata.fields')}
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{layer.name}</span>
+                  <span className="text-xs text-slate-500">
+                    {layer.featureCount ?? '?'} {t('metadata.featureCount')} · {layer.fields.length} {t('metadata.fields')}
+                  </span>
+                </div>
+                {(layer.crs || layer.encoding) && (
+                  <div className="mt-1 flex gap-2 text-xs text-slate-500">
+                    {layer.crs && <span>CRS: {layer.crs}</span>}
+                    {layer.encoding && <span>{t('metadata.encoding')}: {layer.encoding}</span>}
+                  </div>
+                )}
               </button>
             ))}
           </div>
@@ -94,11 +109,28 @@ export function MetadataPanel({ metadata, selectedLayer, onSelectLayer }: Metada
   );
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
+function Metric({ label, value, badge, badgeColor }: {
+  label: string;
+  value: string | number;
+  badge?: string;
+  badgeColor?: 'emerald' | 'amber' | 'slate';
+}) {
+  const colorClass = badgeColor === 'emerald'
+    ? 'bg-emerald-950/60 text-emerald-300 border-emerald-400/30'
+    : badgeColor === 'amber'
+      ? 'bg-amber-950/60 text-amber-300 border-amber-400/30'
+      : 'bg-slate-800 text-slate-400 border-slate-600/30';
   return (
     <div className="rounded-2xl bg-slate-950/70 p-3">
       <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 truncate text-sm font-medium text-slate-100">{value}</p>
+      <div className="mt-1 flex items-center gap-2">
+        <p className="truncate text-sm font-medium text-slate-100">{value}</p>
+        {badge && (
+          <span className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${colorClass}`}>
+            {badge}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
