@@ -40,6 +40,16 @@ const copy = {
       command: '修复文件中的编码乱码，转为 UTF-8，然后导出 GeoJSON。',
       reason: '检测到编码问题',
     },
+    extractMainLayer: {
+      label: '提取主图层',
+      command: '只提取 "{layerName}" 这个图层，然后导出 GeoJSON。',
+      reason: '检测到包含多个图层的压缩包',
+    },
+    simplifyGeometry: {
+      label: '抽稀简化几何',
+      command: '数据量太大，帮我做一下几何抽稀，减小文件体积。',
+      reason: '要素数量超过 50,000，可能导致渲染卡顿',
+    },
   },
   en: {
     transformGcj02: {
@@ -71,6 +81,16 @@ const copy = {
       label: 'Fix encoding garbled text',
       command: 'Fix encoding issues in the file, convert to UTF-8, then export GeoJSON.',
       reason: 'Encoding issue detected',
+    },
+    extractMainLayer: {
+      label: 'Extract main layer',
+      command: 'Extract only the "{layerName}" layer, then export GeoJSON.',
+      reason: 'Multi-layer archive detected',
+    },
+    simplifyGeometry: {
+      label: 'Simplify geometry',
+      command: 'The dataset is large. Simplify the geometry to reduce file size.',
+      reason: 'Over 50,000 features may cause rendering lag',
     },
   },
   ja: {
@@ -104,6 +124,16 @@ const copy = {
       command: 'ファイルの文字化けを修正し、UTF-8 に変換して GeoJSON をエクスポート。',
       reason: 'エンコーディングの問題を検出',
     },
+    extractMainLayer: {
+      label: 'メインレイヤーを抽出',
+      command: '"{layerName}" レイヤーのみを抽出し、GeoJSON をエクスポート。',
+      reason: '複数レイヤーを含む圧縮ファイルを検出',
+    },
+    simplifyGeometry: {
+      label: 'ジオメトリを簡略化',
+      command: 'データ量が多すぎます。ジオメトリを簡略化してファイルサイズを削減してください。',
+      reason: 'フィーチャー数が 50,000 を超え、レンダリングが遅くなる可能性あり',
+    },
   },
   ko: {
     transformGcj02: {
@@ -135,6 +165,16 @@ const copy = {
       label: '인코딩 깨짐 수정',
       command: '파일의 인코딩 문제를 수정하고 UTF-8로 변환하여 GeoJSON을 내보내기.',
       reason: '인코딩 문제 감지',
+    },
+    extractMainLayer: {
+      label: '주 레이어 추출',
+      command: '"{layerName}" 레이어만 추출하고 GeoJSON을 내보내기.',
+      reason: '여러 레이어가 포함된 압축 파일 감지',
+    },
+    simplifyGeometry: {
+      label: '기하학 단순화',
+      command: '데이터량이 너무 많습니다. 기하학을 단순화하여 파일 크기를 줄여주세요.',
+      reason: '피처 수가 50,000을 초과하여 렌더링 지연 가능',
     },
   },
   fr: {
@@ -168,6 +208,16 @@ const copy = {
       command: 'Corriger les problèmes d\'encodage du fichier, convertir en UTF-8, puis exporter en GeoJSON.',
       reason: 'Problème d\'encodage détecté',
     },
+    extractMainLayer: {
+      label: 'Extraire la couche principale',
+      command: 'Extraire uniquement la couche "{layerName}", puis exporter en GeoJSON.',
+      reason: 'Archive multi-couches détectée',
+    },
+    simplifyGeometry: {
+      label: 'Simplifier la géométrie',
+      command: 'Le jeu de données est volumineux. Simplifiez la géométrie pour réduire la taille du fichier.',
+      reason: 'Plus de 50 000 entités peuvent ralentir l\'affichage',
+    },
   },
   es: {
     transformGcj02: {
@@ -200,6 +250,16 @@ const copy = {
       command: 'Corregir problemas de codificación del archivo, convertir a UTF-8, luego exportar GeoJSON.',
       reason: 'Problema de codificación detectado',
     },
+    extractMainLayer: {
+      label: 'Extraer capa principal',
+      command: 'Extraer solo la capa "{layerName}", luego exportar GeoJSON.',
+      reason: 'Archivo comprimido con múltiples capas detectado',
+    },
+    simplifyGeometry: {
+      label: 'Simplificar geometría',
+      command: 'El conjunto de datos es grande. Simplifique la geometría para reducir el tamaño del archivo.',
+      reason: 'Más de 50,000 entidades pueden ralentizar el renderizado',
+    },
   },
 } satisfies Record<Language, Record<string, Omit<ShortcutTag, 'id'>>>;
 
@@ -207,6 +267,22 @@ export function buildShortcutTags(metadata: GeoSurgicalMetadata, language: Langu
   const tags: ShortcutTag[] = [];
   const fieldNames = new Set(metadata.fields.map((field) => field.name.toLowerCase()));
   const text = copy[language];
+
+  if (metadata.layers && metadata.layers.length > 1) {
+    const mainLayer = [...metadata.layers].sort((a, b) => (b.featureCount ?? 0) - (a.featureCount ?? 0))[0];
+    if (mainLayer) {
+      tags.push({
+        id: 'extract-main-layer',
+        label: text.extractMainLayer.label,
+        command: text.extractMainLayer.command.replace('{layerName}', mainLayer.name),
+        reason: text.extractMainLayer.reason,
+      });
+    }
+  }
+
+  if (metadata.featureCountEstimate && metadata.featureCountEstimate > 50000) {
+    tags.push({ id: 'simplify-geometry', ...text.simplifyGeometry });
+  }
 
   if (metadata.crs === 'EPSG:4326') {
     tags.push({ id: 'transform-gcj02', ...text.transformGcj02 });

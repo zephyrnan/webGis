@@ -99,14 +99,52 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       resultLayerRef.current = null;
     }
 
-    if (result?.kind !== 'geojson' || !result.content) return;
+    if (result?.kind !== 'geojson') return;
 
-    const source = new VectorSource({
-      features: new GeoJSON().readFeatures(result.content, {
-        dataProjection: 'EPSG:4326',
-        featureProjection: 'EPSG:3857',
-      }),
-    });
+    // Convex hull preview layer (blue dashed outline — lightweight for 794k features)
+    if (result.previewContent) {
+      const previewSource = new VectorSource({
+        features: new GeoJSON().readFeatures(result.previewContent, {
+          dataProjection: 'EPSG:4326',
+          featureProjection: 'EPSG:3857',
+        }),
+      });
+      const previewLayer = new VectorLayer({
+        source: previewSource,
+        style: new Style({
+          stroke: new Stroke({ color: '#3399cc', width: 2, lineDash: [4, 4] }),
+          fill: new Fill({ color: 'rgba(51, 153, 204, 0.1)' }),
+        }),
+      });
+      map.addLayer(previewLayer);
+      resultLayerRef.current = previewLayer;
+
+      const extent = previewSource.getExtent();
+      if (extent && extent.every(Number.isFinite)) {
+        map.getView().fit(extent, { padding: [40, 40, 40, 40], maxZoom: 14 });
+      }
+      return;
+    }
+
+    let source: VectorSource;
+
+    if (result.blobUrl) {
+      // Real WASM: Blob URL 直传 OL，由内部 Loader 异步拉取解析，不阻塞主线程
+      source = new VectorSource({
+        url: result.blobUrl,
+        format: new GeoJSON({ dataProjection: 'EPSG:4326' }),
+      });
+    } else if (result.content) {
+      // Mock 模式：content 已是解析好的 GeoJSON 对象
+      source = new VectorSource({
+        features: new GeoJSON().readFeatures(result.content, {
+          dataProjection: 'EPSG:4326',
+          featureProjection: 'EPSG:3857',
+        }),
+      });
+    } else {
+      return;
+    }
 
     let layer: VectorLayer<VectorSource> | WebGLVectorLayer;
 
@@ -159,9 +197,18 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
     });
     map.addInteraction(newSelect);
 
-    const extent = source.getExtent();
-    if (extent && extent.every(Number.isFinite)) {
-      map.getView().fit(extent, { padding: [40, 40, 40, 40], maxZoom: 14 });
+    // URL 模式下 features 异步加载，需监听 loadend 后再 fit
+    const fitExtent = () => {
+      const extent = source.getExtent();
+      if (extent && extent.every(Number.isFinite)) {
+        map.getView().fit(extent, { padding: [40, 40, 40, 40], maxZoom: 14 });
+      }
+    };
+
+    if (result?.blobUrl) {
+      source.once('featuresloadend', fitExtent);
+    } else {
+      fitExtent();
     }
   }, [result, useWebGL]);
 
@@ -211,8 +258,11 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
   }, [showOriginal, originalGeoJson, useWebGL, originalOpacity]);
 
   const geoJsonContent = result?.kind === 'geojson' ? result.content : null;
-  const featureCount = geoJsonContent
-    ? (geoJsonContent as GeoJSON.FeatureCollection).features?.length ?? 0
+  // blobUrl/previewContent 模式从 summary 取数量，content 模式直接数 features
+  const featureCount = result?.kind === 'geojson'
+    ? ((result.blobUrl || result.previewContent)
+      ? (result.summary.outputFeatureCount ?? 0)
+      : (geoJsonContent as GeoJSON.FeatureCollection)?.features?.length ?? 0)
     : 0;
 
   const closePopup = useCallback(() => {

@@ -2,22 +2,26 @@ import type { GeoSurgicalWasm, MetadataInputContext, ExecuteInputContext } from 
 import type { GeoSurgicalMetadata } from '../types/metadata';
 import type { ProgressEvent } from '../types/protocol';
 
-let enginePromise: Promise<any> | null = null;
+// Cache the WASM module and initialization — only create fresh engine instances.
+let wasmModulePromise: Promise<any> | null = null;
 let engineInstance: any = null;
+
+async function loadWasmModule() {
+  if (!wasmModulePromise) {
+    wasmModulePromise = (async () => {
+      const wasm = await import('@wasm/geosurgical');
+      await wasm.default();
+      return wasm;
+    })();
+  }
+  return wasmModulePromise;
+}
 
 async function loadEngine(): Promise<any> {
   if (engineInstance) return engineInstance;
-
-  if (!enginePromise) {
-    enginePromise = (async () => {
-      const wasm = await import('@wasm/geosurgical');
-      await wasm.default();
-      engineInstance = new wasm.GeoSurgicalEngine();
-      return engineInstance;
-    })();
-  }
-
-  return enginePromise;
+  const wasm = await loadWasmModule();
+  engineInstance = new wasm.GeoSurgicalEngine();
+  return engineInstance;
 }
 
 type ProgressCallback = (progress: ProgressEvent) => void;
@@ -42,7 +46,11 @@ export function createRealGeoSurgicalWasm(onProgress?: ProgressCallback): GeoSur
     },
 
     async execute_surgery(input, jsonInstructions, context) {
-      const engine = await loadEngine();
+      // Create a fresh engine instance for surgery execution.
+      // Reusing the singleton after extractMetadata on large files (100MB+)
+      // causes the WASM allocator to hang — likely memory fragmentation.
+      const wasm = await loadWasmModule();
+      const engine = new wasm.GeoSurgicalEngine();
 
       if (onProgress) {
         engine.setProgressCallback((evt: any) => {

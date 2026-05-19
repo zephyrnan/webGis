@@ -20,15 +20,19 @@ export function ResultPanel({ result, history, historyIndex, onUndo, onRedo, onJ
   const [copied, setCopied] = useState(false);
 
   const { url, size } = useMemo(() => {
-    if (result?.kind !== 'geojson' || !result.content) return { url: null, size: 0 };
+    if (result?.kind !== 'geojson') return { url: null, size: 0 };
+    // Real WASM: Worker 已创建 Blob URL，直接使用，不重新序列化
+    if (result.blobUrl) return { url: result.blobUrl, size: 0 };
+    // Mock 模式: content 是 JS 对象，需要序列化创建 Blob
+    if (!result.content) return { url: null, size: 0 };
     const blob = new Blob([JSON.stringify(result.content, null, 2)], { type: 'application/geo+json' });
     return { url: URL.createObjectURL(blob), size: blob.size };
   }, [result]);
 
-  // Revoke object URL on unmount or change
+  // Revoke object URL on unmount or change (only revoke locally-created URLs)
   useEffect(() => () => {
-    if (url) URL.revokeObjectURL(url);
-  }, [url]);
+    if (url && url !== result?.blobUrl) URL.revokeObjectURL(url);
+  }, [url, result?.blobUrl]);
 
   // Notify parent when export URL is created (for cleanup coordination)
   useEffect(() => {
@@ -38,9 +42,20 @@ export function ResultPanel({ result, history, historyIndex, onUndo, onRedo, onJ
   }, [url, onExportComplete]);
 
   const handleCopy = async () => {
-    if (!result?.content) return;
+    if (!result) return;
     try {
-      await navigator.clipboard.writeText(JSON.stringify(result.content, null, 2));
+      let text: string;
+      if (result.blobUrl) {
+        // Real WASM: 从 Blob URL fetch 内容
+        const resp = await fetch(result.blobUrl);
+        text = await resp.text();
+      } else if (result.content) {
+        // Mock 模式: 序列化 content 对象
+        text = JSON.stringify(result.content, null, 2);
+      } else {
+        return;
+      }
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {

@@ -144,6 +144,8 @@ pub struct SurgeryResult {
     pub file_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<serde_json::Value>,
+    #[serde(rename = "previewContent", skip_serializing_if = "Option::is_none")]
+    pub preview_content: Option<serde_json::Value>,
     pub summary: SurgerySummary,
     pub logs: Vec<String>,
     pub warnings: Vec<String>,

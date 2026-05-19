@@ -13,6 +13,15 @@ pub fn execute(
     file_size: f64,
     progress_callback: &Option<Function>,
 ) -> Result<Vec<u8>, JsError> {
+    // Fast path: pure export from ZIP — stream shapefile directly to GeoJSON bytes
+    // without materializing the entire FeatureCollection in memory.
+    if is_zip_input(input, file_name)
+        && ast.operations.len() == 1
+        && matches!(&ast.operations[0], Operation::Export { .. })
+    {
+        return stream_export_zip(input, ast, file_name, file_size, progress_callback);
+    }
+
     let mut fc = parse_input_feature_collection(input, file_name, ast.target_layer.as_deref())?;
 
     let input_count = fc.features.len();
@@ -261,14 +270,26 @@ pub fn execute(
 
     warnings.push("WASM_REAL_MODE".to_string());
 
+    // Only compute convex hull preview when dataset is large enough to block the main thread.
+    // Small datasets skip hull — frontend renders full geometry directly via blobUrl.
+    const PREVIEW_HULL_THRESHOLD: usize = 50_000;
+    let output_count = fc.features.len();
+    let preview_fc = if output_count > PREVIEW_HULL_THRESHOLD {
+        Some(compute_preview_hull_from_fc(&fc))
+    } else {
+        None
+    };
+
+    // Build envelope first (lightweight — no GeoJSON data)
     let envelope = SurgeryEnvelope {
         result: SurgeryResult {
             kind: "geojson".to_string(),
             file_name: to_output_filename(file_name),
-            content: Some(serde_json::to_value(&fc).unwrap_or_default()),
+            content: None,
+            preview_content: preview_fc,
             summary: SurgerySummary {
                 input_feature_count: Some(input_count),
-                output_feature_count: Some(fc.features.len()),
+                output_feature_count: Some(output_count),
                 operations: ast.operations.iter().map(|o| operation_name(o).to_string()).collect(),
                 mock_mode: false,
             },
@@ -281,10 +302,171 @@ pub fn execute(
             strategy: if file_size <= 50.0 * 1024.0 * 1024.0 { "snapshot".to_string() } else { "replay_from_original".to_string() },
         },
     };
+    let env_bytes = serde_json::to_vec(&envelope)
+        .map_err(|e| JsError::new(&format!("Envelope serialization failed: {}", e)))?;
 
-    let json = serde_json::to_string(&envelope)
-        .map_err(|e| JsError::new(&e.to_string()))?;
-    Ok(json.into_bytes())
+    // Streaming GeoJSON serialization: write features directly to buffer
+    // using serde_json::to_writer to avoid per-feature temporary Vec<u8> allocations.
+    let mut geojson_buf: Vec<u8> = Vec::new();
+    geojson_buf.extend_from_slice(b"{\"type\":\"FeatureCollection\",\"features\":[");
+    let mut first = true;
+    for feature in &fc.features {
+        if !first {
+            geojson_buf.push(b',');
+        }
+        first = false;
+        serde_json::to_writer(&mut geojson_buf, feature)
+            .map_err(|e| JsError::new(&format!("Feature serialization failed: {}", e)))?;
+    }
+    geojson_buf.extend_from_slice(b"]}");
+    drop(fc); // Free FeatureCollection memory before building final buffer
+
+    // Binary hybrid protocol: [4-byte header length (u32 LE)] + [Envelope bytes] + [GeoJSON bytes]
+    let mut final_buffer = Vec::with_capacity(4 + env_bytes.len() + geojson_buf.len());
+    final_buffer.extend_from_slice(&(env_bytes.len() as u32).to_le_bytes());
+    final_buffer.extend_from_slice(&env_bytes);
+    final_buffer.extend_from_slice(&geojson_buf);
+
+    Ok(final_buffer)
+}
+
+/// Streaming export: process shapefile directly to GeoJSON bytes without
+/// creating a FeatureCollection. For 794k polygon features, this avoids
+/// allocating 794k Feature objects in memory simultaneously.
+fn stream_export_zip(
+    input: &[u8],
+    ast: &GeoSurgicalAst,
+    file_name: &str,
+    file_size: f64,
+    progress_callback: &Option<Function>,
+) -> Result<Vec<u8>, JsError> {
+    let cursor = Cursor::new(input);
+    let mut archive = ZipArchive::new(cursor)
+        .map_err(|e| JsError::new(&format!("ZIP 解析失败: {}", e)))?;
+
+    // Find target layer's shp/dbf bytes
+    let target = ast.target_layer.as_deref();
+    let mut shp_bytes: Option<Vec<u8>> = None;
+    let mut dbf_bytes: Option<Vec<u8>> = None;
+
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index)
+            .map_err(|e| JsError::new(&format!("ZIP 条目读取失败: {}", e)))?;
+        let entry_name = file.name().to_string();
+        let lower = entry_name.to_lowercase();
+        let stem = stem_name(&entry_name);
+
+        if let Some(t) = target {
+            if !stem.eq_ignore_ascii_case(t) {
+                continue;
+            }
+        }
+
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|e| JsError::new(&format!("ZIP 条目读取失败: {}", e)))?;
+
+        if lower.ends_with(".shp") {
+            shp_bytes = Some(bytes);
+        } else if lower.ends_with(".dbf") {
+            dbf_bytes = Some(bytes);
+        }
+    }
+
+    let shp_data = shp_bytes.ok_or_else(|| JsError::new("ZIP 中未找到 .shp 文件"))?;
+    let mut properties: Vec<serde_json::Map<String, serde_json::Value>> = dbf_bytes.map(|d| parse_dbf_records_lossy(&d)).unwrap_or_default();
+
+    emit_progress(progress_callback, "executing", "正在流式导出 GeoJSON...", 20);
+
+    // Stream-process: read each shape, serialize to JSON, write to buffer
+    let mut reader = shapefile::ShapeReader::new(Cursor::new(&shp_data))
+        .map_err(|e| JsError::new(&format!("SHP 解析失败: {}", e)))?;
+
+    let mut geojson_buf: Vec<u8> = Vec::new();
+    geojson_buf.extend_from_slice(b"{\"type\":\"FeatureCollection\",\"features\":[");
+
+    let mut count: usize = 0;
+    let mut first = true;
+    let mut all_points: Vec<geo::Coord<f64>> = Vec::new();
+    for (index, shape_result) in reader.iter_shapes().enumerate() {
+        let shape = shape_result.map_err(|e| JsError::new(&format!("SHP 几何读取失败: {}", e)))?;
+        let Some(geometry) = shape_to_geometry(shape) else { continue };
+
+        // Collect exterior vertices for convex hull preview
+        extract_coords_from_geometry(&geometry, &mut all_points);
+
+        if !first {
+            geojson_buf.push(b',');
+        }
+        first = false;
+
+        let props = if index < properties.len() {
+            std::mem::take(&mut properties[index])
+        } else {
+            serde_json::Map::new()
+        };
+
+        let feature = geojson::Feature {
+            bbox: None,
+            geometry: Some(geometry),
+            id: None,
+            properties: Some(props),
+            foreign_members: None,
+        };
+
+        serde_json::to_writer(&mut geojson_buf, &feature)
+            .map_err(|e| JsError::new(&format!("Feature serialization failed: {}", e)))?;
+
+        count += 1;
+        if count % 10000 == 0 {
+            emit_progress(progress_callback, "executing", &format!("已导出 {} 个要素...", count), 20);
+        }
+    }
+
+    geojson_buf.extend_from_slice(b"]}");
+
+    emit_progress(progress_callback, "exporting", "结果已生成，准备回传主线程。", 100);
+
+    // Only compute convex hull preview when dataset is large enough to block the main thread.
+    const PREVIEW_HULL_THRESHOLD: usize = 50_000;
+    let preview_fc = if count > PREVIEW_HULL_THRESHOLD {
+        Some(compute_preview_hull_from_points(&all_points))
+    } else {
+        None
+    };
+
+    // Build envelope
+    let envelope = SurgeryEnvelope {
+        result: SurgeryResult {
+            kind: "geojson".to_string(),
+            file_name: to_output_filename(file_name),
+            content: None,
+            preview_content: preview_fc,
+            summary: SurgerySummary {
+                input_feature_count: Some(count),
+                output_feature_count: Some(count),
+                operations: vec!["export".to_string()],
+                mock_mode: false,
+            },
+            logs: vec![format!("operation:export (geojson)")],
+            warnings: vec!["WASM_REAL_MODE".to_string()],
+        },
+        undo: UndoCapability {
+            available: file_size <= 50.0 * 1024.0 * 1024.0,
+            reason: if file_size > 50.0 * 1024.0 * 1024.0 { Some("file_too_large".to_string()) } else { None },
+            strategy: if file_size <= 50.0 * 1024.0 * 1024.0 { "snapshot".to_string() } else { "replay_from_original".to_string() },
+        },
+    };
+    let env_bytes = serde_json::to_vec(&envelope)
+        .map_err(|e| JsError::new(&format!("Envelope serialization failed: {}", e)))?;
+
+    // Binary hybrid protocol
+    let mut final_buffer = Vec::with_capacity(4 + env_bytes.len() + geojson_buf.len());
+    final_buffer.extend_from_slice(&(env_bytes.len() as u32).to_le_bytes());
+    final_buffer.extend_from_slice(&env_bytes);
+    final_buffer.extend_from_slice(&geojson_buf);
+
+    Ok(final_buffer)
 }
 
 fn parse_input_feature_collection(input: &[u8], file_name: &str, target_layer: Option<&str>) -> Result<geojson::FeatureCollection, JsError> {
@@ -377,17 +559,24 @@ fn stem_name(entry_name: &str) -> String {
 fn parse_shapefile_feature_collection(shp_bytes: &[u8], dbf_bytes: Option<&[u8]>) -> Result<geojson::FeatureCollection, JsError> {
     let mut reader = shapefile::ShapeReader::new(Cursor::new(shp_bytes))
         .map_err(|e| JsError::new(&format!("SHP 解析失败: {}", e)))?;
-    let properties = dbf_bytes.map(parse_dbf_records_lossy).unwrap_or_default();
-    let mut features = Vec::new();
+    // Parse DBF once, then move (not clone) each record into its feature
+    let mut properties: Vec<serde_json::Map<String, serde_json::Value>> = dbf_bytes.map(parse_dbf_records_lossy).unwrap_or_default();
+    let mut features = Vec::with_capacity(properties.len());
 
     for (index, shape_result) in reader.iter_shapes().enumerate() {
         let shape = shape_result.map_err(|e| JsError::new(&format!("SHP 几何读取失败: {}", e)))?;
         let Some(geometry) = shape_to_geometry(shape) else { continue };
+        // Move (not clone) the property map — avoids 794k deep copies
+        let props = if index < properties.len() {
+            std::mem::take(&mut properties[index])
+        } else {
+            serde_json::Map::new()
+        };
         features.push(geojson::Feature {
             bbox: None,
             geometry: Some(geometry),
             id: None,
-            properties: properties.get(index).cloned(),
+            properties: Some(props),
             foreign_members: None,
         });
     }
@@ -1045,6 +1234,90 @@ fn geojson_to_geo_polygon(geom: &geojson::Geometry) -> Option<geo::MultiPolygon<
         }
         _ => None,
     }
+}
+
+// --- Convex Hull Preview ---
+
+fn extract_coords_from_geometry(geom: &geojson::Geometry, out: &mut Vec<geo::Coord<f64>>) {
+    use geojson::Value;
+    match &geom.value {
+        Value::Point(c) => {
+            if c.len() >= 2 { out.push(geo::Coord { x: c[0], y: c[1] }); }
+        }
+        Value::MultiPoint(pts) | Value::LineString(pts) => {
+            for c in pts {
+                if c.len() >= 2 { out.push(geo::Coord { x: c[0], y: c[1] }); }
+            }
+        }
+        Value::Polygon(rings) => {
+            // Only exterior ring (first) — interior points are always inside hull
+            if let Some(exterior) = rings.first() {
+                for c in exterior {
+                    if c.len() >= 2 { out.push(geo::Coord { x: c[0], y: c[1] }); }
+                }
+            }
+        }
+        Value::MultiPolygon(polys) => {
+            for rings in polys {
+                if let Some(exterior) = rings.first() {
+                    for c in exterior {
+                        if c.len() >= 2 { out.push(geo::Coord { x: c[0], y: c[1] }); }
+                    }
+                }
+            }
+        }
+        Value::MultiLineString(lines) => {
+            for line in lines {
+                for c in line {
+                    if c.len() >= 2 { out.push(geo::Coord { x: c[0], y: c[1] }); }
+                }
+            }
+        }
+        Value::GeometryCollection(geoms) => {
+            for g in geoms {
+                extract_coords_from_geometry(g, out);
+            }
+        }
+    }
+}
+
+fn compute_preview_hull_from_fc(fc: &geojson::FeatureCollection) -> serde_json::Value {
+    let mut points: Vec<geo::Coord<f64>> = Vec::new();
+    for feature in &fc.features {
+        if let Some(ref geom) = feature.geometry {
+            extract_coords_from_geometry(geom, &mut points);
+        }
+    }
+    compute_preview_hull_from_points(&points)
+}
+
+fn compute_preview_hull_from_points(points: &[geo::Coord<f64>]) -> serde_json::Value {
+    use geo::algorithm::convex_hull::ConvexHull;
+    let mp = geo::MultiPoint::from_iter(points.iter().cloned());
+    let hull: geo::Polygon<f64> = mp.convex_hull();
+
+    // Convert to GeoJSON FeatureCollection with single Feature
+    let exterior: Vec<Vec<f64>> = hull.exterior().coords().map(|c| vec![c.x, c.y]).collect();
+    let mut rings = vec![exterior];
+    for interior in hull.interiors() {
+        rings.push(interior.coords().map(|c| vec![c.x, c.y]).collect());
+    }
+
+    let hull_geom = geojson::Geometry::new(geojson::Value::Polygon(rings));
+    let hull_feature = geojson::Feature {
+        bbox: None,
+        geometry: Some(hull_geom),
+        id: None,
+        properties: None,
+        foreign_members: None,
+    };
+    let hull_fc = geojson::FeatureCollection {
+        bbox: None,
+        features: vec![hull_feature],
+        foreign_members: None,
+    };
+
+    serde_json::to_value(&hull_fc).unwrap_or_default()
 }
 
 fn emit_progress(callback: &Option<Function>, phase: &str, message: &str, percent: u32) {

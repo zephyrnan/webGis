@@ -32,6 +32,8 @@ export type SurgeryResult = {
   kind: 'geojson' | 'summary';
   fileName: string;
   content?: GeoJSON.FeatureCollection;
+  previewContent?: GeoJSON.FeatureCollection;
+  blobUrl?: string;
   summary: {
     inputFeatureCount: number | null;
     outputFeatureCount: number | null;

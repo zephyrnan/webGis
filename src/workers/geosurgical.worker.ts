@@ -194,14 +194,47 @@ async function handleExecute(request: Extract<WorkerRequest, { type: 'EXECUTE_AS
     fileSize: context.fileSize,
     metadata: context.metadata,
   });
-  const envelope = decodeSurgeryEnvelope(bytes);
+
+  // 检测是否为二进制混合协议：[4字节头长 LE] + [Envelope JSON] + [GeoJSON bytes]
+  // Mock 模式返回的是纯 JSON envelope，走 fallback
+  let result: import('../types/protocol').SurgeryResult;
+  let undo: import('../types/protocol').UndoCapability;
+
+  if (bytes.byteLength > 4) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const headerLen = view.getUint32(0, true); // Little Endian，与 Rust to_le_bytes() 对齐
+
+    if (headerLen > 0 && headerLen < bytes.byteLength - 4) {
+      // 二进制协议：切割头部和 payload
+      const headerBytes = new Uint8Array(bytes.buffer, bytes.byteOffset + 4, headerLen);
+      const payloadBytes = bytes.slice(4 + headerLen);
+
+      const envelopeText = new TextDecoder().decode(headerBytes);
+      const envelope = JSON.parse(envelopeText);
+
+      const blob = new Blob([payloadBytes], { type: 'application/geo+json' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      result = { ...envelope.result, blobUrl };
+      undo = envelope.undo;
+    } else {
+      // Fallback: Mock 模式返回的纯 JSON envelope
+      const envelope = decodeSurgeryEnvelope(bytes);
+      result = envelope.result;
+      undo = envelope.undo;
+    }
+  } else {
+    const envelope = decodeSurgeryEnvelope(bytes);
+    result = envelope.result;
+    undo = envelope.undo;
+  }
 
   post({
     type: 'PROGRESS',
     taskId: request.taskId,
     progress: { phase: 'exporting', message: '结果已生成，准备回传主线程。', messageKey: 'progress.exportReady', percent: 100 },
   });
-  post({ type: 'RESULT_READY', taskId: request.taskId, result: envelope.result, undo: envelope.undo });
+  post({ type: 'RESULT_READY', taskId: request.taskId, result, undo });
 }
 
 function requireContext(taskId: string) {
