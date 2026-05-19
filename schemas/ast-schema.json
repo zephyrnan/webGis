@@ -38,6 +38,10 @@
         { "$ref": "#/$defs/simplify" },
         { "$ref": "#/$defs/field_calculate" },
         { "$ref": "#/$defs/validate_geometry" },
+        { "$ref": "#/$defs/buffer" },
+        { "$ref": "#/$defs/clip" },
+        { "$ref": "#/$defs/intersect" },
+        { "$ref": "#/$defs/dissolve" },
         { "$ref": "#/$defs/export" },
         { "$ref": "#/$defs/noop" },
         { "$ref": "#/$defs/need_clarification" }
@@ -129,6 +133,47 @@
       "properties": {
         "action": { "const": "validate_geometry" },
         "mode": { "type": "string", "enum": ["check", "check_and_fix"], "description": "check 仅检查，check_and_fix 检查并尝试修复" }
+      }
+    },
+    "buffer": {
+      "type": "object",
+      "description": "缓冲区（对几何生成缓冲区，圆弧近似）",
+      "required": ["action", "distance"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "buffer" },
+        "distance": { "type": "number", "exclusiveMinimum": 0, "description": "缓冲距离，单位与坐标系一致" },
+        "segments": { "type": "integer", "minimum": 4, "default": 32, "description": "圆弧分段数，默认 32" }
+      }
+    },
+    "clip": {
+      "type": "object",
+      "description": "裁剪（按边界框裁剪，保留 bbox 内的要素）",
+      "required": ["action", "bbox"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "clip" },
+        "bbox": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4, "description": "[min_x, min_y, max_x, max_y]" }
+      }
+    },
+    "intersect": {
+      "type": "object",
+      "description": "相交（按边界框筛选，保留与 bbox 相交的要素）",
+      "required": ["action", "bbox"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "intersect" },
+        "bbox": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4, "description": "[min_x, min_y, max_x, max_y]" }
+      }
+    },
+    "dissolve": {
+      "type": "object",
+      "description": "融合（按字段值分组，合并多边形几何）",
+      "required": ["action", "field"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "dissolve" },
+        "field": { "type": "string", "minLength": 1, "description": "分组字段名" }
       }
     },
     "export": {

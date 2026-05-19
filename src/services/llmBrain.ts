@@ -26,6 +26,10 @@ const SYSTEM_PROMPT = `You are a REST API that outputs ONLY raw JSON. Do NOT wra
 - simplify: 几何抽稀（减少顶点数量）。参数: tolerance (容差, 如 0.0001), preserve_topology (可选, 默认 true)
 - field_calculate: 字段计算（对两个操作数执行算术运算）。参数: target_field (目标字段名), operation (add/subtract/multiply/divide), operands (两个操作数，字段名或数字字面量，如 ["population","area"])
 - validate_geometry: 几何校验（检查几何合法性）。参数: mode (check 仅检查, check_and_fix 检查并修复)
+- buffer: 缓冲区（对几何生成缓冲区，圆弧近似）。参数: distance (缓冲距离，单位与坐标系一致), segments (可选，圆弧分段数，默认 32)
+- clip: 裁剪（按边界框裁剪，保留 bbox 内的要素）。参数: bbox [min_x, min_y, max_y, max_y]
+- intersect: 相交（按边界框筛选，保留与 bbox 相交的要素）。参数: bbox [min_x, min_y, max_y, max_y]
+- dissolve: 融合（按字段值分组，合并多边形几何）。参数: field (分组字段名)
 - export: 导出结果。参数: format (目前只支持 geojson)
 - noop: 无法执行时的占位符。参数: reason
 
@@ -128,7 +132,7 @@ export class LlmBrainGateway implements BrainGateway {
       `校验错误: ${validationError}`,
       `合法字段: [${fieldNames.map((f) => `"${f}"`).join(', ')}]`,
       layerNames.length ? `合法图层: [${layerNames.map((l) => `"${l}"`).join(', ')}]` : '',
-      '合法 actions: filter_area, drop_empty, rename_field, transform_crs, fix_encoding, simplify, field_calculate, validate_geometry, export, noop, need_clarification',
+      '合法 actions: filter_area, drop_empty, rename_field, transform_crs, fix_encoding, simplify, field_calculate, validate_geometry, buffer, clip, intersect, dissolve, export, noop, need_clarification',
       '请只输出修正后的 JSON，不要解释。',
     ].filter(Boolean).join('\n');
 
@@ -378,6 +382,35 @@ export class LlmBrainGateway implements BrainGateway {
       return {
         action: 'validate_geometry',
         mode: op.mode === 'check' ? 'check' : 'check_and_fix',
+      };
+    }
+
+    if (action === 'buffer') {
+      return {
+        action: 'buffer',
+        distance: typeof op.distance === 'number' && op.distance > 0 ? op.distance : 100,
+        segments: typeof op.segments === 'number' && op.segments > 0 ? Math.round(op.segments) : undefined,
+      };
+    }
+
+    if (action === 'clip') {
+      const bbox: [number, number, number, number] = Array.isArray(op.bbox) && op.bbox.length === 4
+        ? [Number(op.bbox[0]), Number(op.bbox[1]), Number(op.bbox[2]), Number(op.bbox[3])]
+        : [0, 0, 0, 0];
+      return { action: 'clip', bbox };
+    }
+
+    if (action === 'intersect') {
+      const bbox: [number, number, number, number] = Array.isArray(op.bbox) && op.bbox.length === 4
+        ? [Number(op.bbox[0]), Number(op.bbox[1]), Number(op.bbox[2]), Number(op.bbox[3])]
+        : [0, 0, 0, 0];
+      return { action: 'intersect', bbox };
+    }
+
+    if (action === 'dissolve') {
+      return {
+        action: 'dissolve',
+        field: typeof op.field === 'string' && op.field ? op.field : 'name',
       };
     }
 

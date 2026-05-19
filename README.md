@@ -11,7 +11,7 @@ GeoSurgical 是一个面向空间数据的语言驱动"手术台"。用户上传
 - **Rust WASM 引擎**：真实 GeoJSON/ZIP Shapefile 解析、元数据提取、BBox 计算、CRS 检测。
 - **`.prj` 投影解析**：读取 ZIP 中的 `.prj` 文件，解析 WKT 提取 EPSG 代码。
 - **`.cpg` 编码感知**：读取 ZIP 中的 `.cpg` 文件，用真实编码（GBK、Windows-1256 等）转码 DBF 字段名和值。
-- **AST Dispatcher**：支持 `filter_area`、`drop_empty`、`rename_field`、`transform_crs`（WGS-84 → GCJ-02 / EPSG:3857、GCJ-02 → WGS-84）、`fix_encoding`、`simplify`、`field_calculate`、`validate_geometry`、`export`。
+- **AST Dispatcher**：支持 `filter_area`、`drop_empty`、`rename_field`、`transform_crs`（WGS-84 → GCJ-02 / EPSG:3857、GCJ-02 → WGS-84）、`fix_encoding`、`simplify`、`field_calculate`、`validate_geometry`、`buffer`（缓冲区）、`clip`（裁剪）、`intersect`（相交）、`dissolve`（融合）、`export`。
 - **fix_encoding 真实转码**：从 ZIP 重新读取原始 DBF 字节，用指定编码做字节级转码。
 - **DBF LDID 编码推断**：无 `.cpg` 时从 DBF Header 字节 29 推断编码（22 种 LDID 映射）。
 - **CRS 置信度**：区分 `authoritative`（.prj AUTHORITY）、`heuristic`（WKT 名称推测）、`none`。
@@ -189,6 +189,10 @@ wasm-pack build --target web --release
 | `simplify` | 几何抽稀 (RDP 算法) | tolerance, preserve_topology |
 | `field_calculate` | 字段计算 | target_field, operation, operands |
 | `validate_geometry` | 几何校验/修复 | mode (check / check_and_fix) |
+| `buffer` | 缓冲区（圆弧近似） | distance, segments |
+| `clip` | 裁剪（按 bbox） | bbox [min_x, min_y, max_x, max_y] |
+| `intersect` | 相交（按 bbox 筛选） | bbox [min_x, min_y, max_x, max_y] |
+| `dissolve` | 按字段融合多边形 | field |
 | `export` | 导出结果 | format |
 
 ## 已验证
@@ -212,7 +216,7 @@ wasm-pack build --target web --release
 ## 后续迭代方向
 
 - 完整 PROJ 坐标系转换引擎（当前支持 WGS-84 → GCJ-02 / EPSG:3857、GCJ-02 → WGS-84）。
-- 阶段 C 空间分析能力：`buffer`、`clip`、`intersect`、`dissolve`。
+- 阶段 D 产品化能力：任务历史、AST 模板、批处理、更多导出格式。
 - 流式 LLM 响应（SSE）。
 - 更完整的撤销系统（快照 + 回放）。
 - 部署流水线。

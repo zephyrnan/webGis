@@ -9,6 +9,10 @@ export type GeoOperationAction =
   | 'simplify'
   | 'field_calculate'
   | 'validate_geometry'
+  | 'buffer'
+  | 'clip'
+  | 'intersect'
+  | 'dissolve'
   | 'export'
   | 'noop'
   | 'need_clarification';
@@ -61,6 +65,27 @@ export type ValidateGeometryOperation = {
   mode: 'check' | 'check_and_fix';
 };
 
+export type BufferOperation = {
+  action: 'buffer';
+  distance: number;
+  segments?: number;
+};
+
+export type ClipOperation = {
+  action: 'clip';
+  bbox: [number, number, number, number];
+};
+
+export type IntersectOperation = {
+  action: 'intersect';
+  bbox: [number, number, number, number];
+};
+
+export type DissolveOperation = {
+  action: 'dissolve';
+  field: string;
+};
+
 export type ExportOperation = {
   action: 'export';
   format: 'geojson';
@@ -85,6 +110,10 @@ export type GeoSurgicalOperation =
   | SimplifyOperation
   | FieldCalculateOperation
   | ValidateGeometryOperation
+  | BufferOperation
+  | ClipOperation
+  | IntersectOperation
+  | DissolveOperation
   | ExportOperation
   | NoopOperation
   | NeedClarificationOperation;

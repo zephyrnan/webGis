@@ -195,18 +195,16 @@ LLM 不能只做一次性翻译。后续应引入内部 Reflection 循环。
 - ✅ UI 优化（fade-in 动画、空状态图标、进度条过渡、CommandPalette UX）。
 - ✅ E2E 测试（Playwright 覆盖 simplify/validate_geometry/transform_crs/field_calculate/fix_encoding）。
 
-### 阶段 C：空间分析能力
+### 阶段 C：空间分析能力 ✅ 已完成
 
-可逐步新增：
-
-- `simplify`：几何抽稀。
-- `buffer`：缓冲区。
-- `clip`：裁剪。
-- `intersect`：相交。
-- `dissolve`：按字段融合。
-- `field_calculate`：字段计算。
-- `reproject`：通用坐标转换。
-- `validate_geometry`：几何合法性检查。
+- ✅ `simplify`：几何抽稀（RDP 算法）。
+- ✅ `buffer`：缓冲区（圆弧近似，BooleanOps::union 合并）。
+- ✅ `clip`：裁剪（按 bbox 过滤要素）。
+- ✅ `intersect`：相交（按 bbox 筛选相交要素）。
+- ✅ `dissolve`：按字段融合（BooleanOps::union 合并多边形）。
+- ✅ `field_calculate`：字段计算（add/subtract/multiply/divide）。
+- ✅ `validate_geometry`：几何合法性检查（check / check_and_fix）。
+- `reproject`：通用坐标转换（待后续扩展）。
 
 每个 action 必须符合第 3 节准入标准。
 

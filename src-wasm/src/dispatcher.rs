@@ -191,6 +191,61 @@ pub fn execute(
                     warnings.push(format!("INVALID_GEOMETRY: {} features have invalid geometry", invalid_count));
                 }
             }
+            Operation::Buffer { distance, segments } => {
+                let segs = segments.unwrap_or(16);
+                let mut buffered_count = 0u32;
+                for feature in &mut fc.features {
+                    if let Some(ref geom) = feature.geometry {
+                        if let Some(buffered) = buffer_geojson_geometry(geom, *distance, segs) {
+                            feature.geometry = Some(buffered);
+                            buffered_count += 1;
+                        }
+                    }
+                }
+                logs.push(format!(
+                    "operation:buffer (distance={}, segments={}, geometries: {})",
+                    distance, segs, buffered_count
+                ));
+            }
+            Operation::Clip { bbox } => {
+                let before = fc.features.len();
+                fc.features.retain(|f| {
+                    if let Some(ref geom) = f.geometry {
+                        geojson_bbox_intersects(geom, bbox)
+                    } else {
+                        false
+                    }
+                });
+                let removed = before - fc.features.len();
+                logs.push(format!(
+                    "operation:clip (bbox=[{},{},{},{}], removed {} features)",
+                    bbox[0], bbox[1], bbox[2], bbox[3], removed
+                ));
+            }
+            Operation::Intersect { bbox } => {
+                let before = fc.features.len();
+                fc.features.retain(|f| {
+                    if let Some(ref geom) = f.geometry {
+                        geojson_bbox_intersects(geom, bbox)
+                    } else {
+                        false
+                    }
+                });
+                let removed = before - fc.features.len();
+                logs.push(format!(
+                    "operation:intersect (bbox=[{},{},{},{}], kept {}, removed {})",
+                    bbox[0], bbox[1], bbox[2], bbox[3], fc.features.len(), removed
+                ));
+            }
+            Operation::Dissolve { field } => {
+                let before = fc.features.len();
+                fc.features = dissolve_by_field(&fc, field);
+                let after = fc.features.len();
+                logs.push(format!(
+                    "operation:dissolve (field={}, {} → {} features)",
+                    field, before, after
+                ));
+            }
             Operation::Export { format } => {
                 logs.push(format!("operation:export ({})", format));
             }
@@ -498,6 +553,10 @@ fn operation_name(op: &Operation) -> &str {
         Operation::Simplify { .. } => "simplify",
         Operation::FieldCalculate { .. } => "field_calculate",
         Operation::ValidateGeometry { .. } => "validate_geometry",
+        Operation::Buffer { .. } => "buffer",
+        Operation::Clip { .. } => "clip",
+        Operation::Intersect { .. } => "intersect",
+        Operation::Dissolve { .. } => "dissolve",
         Operation::Export { .. } => "export",
         Operation::Noop { .. } => "noop",
         Operation::NeedClarification { .. } => "need_clarification",
@@ -727,6 +786,264 @@ fn transform_geometry_gcj02_to_wgs84(geom: &mut geojson::Geometry) {
                 transform_geometry_gcj02_to_wgs84(g);
             }
         }
+    }
+}
+
+// --- Buffer ---
+
+fn buffer_geojson_geometry(geom: &geojson::Geometry, distance: f64, segments: u32) -> Option<geojson::Geometry> {
+    use geojson::Value;
+    match &geom.value {
+        Value::Point(coords) => {
+            Some(make_buffer_circle(coords[1], coords[0], distance, segments))
+        }
+        Value::MultiPoint(coords_list) => {
+            let mut polygons = Vec::new();
+            for coords in coords_list {
+                polygons.push(geo_polygon_from_circle(coords[1], coords[0], distance, segments));
+            }
+            let merged = merge_geo_polygons(polygons);
+            geo_to_geojson_polygon(&merged)
+        }
+        Value::LineString(coords) => {
+            buffer_linestring(coords, distance, segments)
+        }
+        Value::Polygon(rings) => {
+            buffer_polygon_rings(rings, distance, segments)
+        }
+        _ => None,
+    }
+}
+
+fn make_buffer_circle(lat: f64, lng: f64, distance: f64, segments: u32) -> geojson::Geometry {
+    let polygon = geo_polygon_from_circle(lat, lng, distance, segments);
+    let mp = geo::MultiPolygon(vec![polygon]);
+    geo_to_geojson_polygon(&mp).unwrap_or_else(|| {
+        geojson::Geometry::new(geojson::Value::Polygon(vec![vec![]]))
+    })
+}
+
+fn geo_polygon_from_circle(lat: f64, lng: f64, distance: f64, segments: u32) -> geo::Polygon<f64> {
+    use geo::{Coord, LineString, Polygon};
+    let mut coords = Vec::new();
+    let segs = segments.max(8) as f64;
+    // Approximate: 1 degree latitude ≈ 111320 meters
+    let dlat = distance / 111320.0;
+    let dlng = distance / (111320.0 * (lat * std::f64::consts::PI / 180.0).cos());
+    for i in 0..=(segments.max(8)) {
+        let angle = 2.0 * std::f64::consts::PI * (i as f64) / segs;
+        coords.push(Coord {
+            x: lng + dlng * angle.cos(),
+            y: lat + dlat * angle.sin(),
+        });
+    }
+    Polygon::new(LineString::new(coords), vec![])
+}
+
+fn merge_geo_polygons(mut polygons: Vec<geo::Polygon<f64>>) -> geo::MultiPolygon<f64> {
+    use geo::BooleanOps;
+    if polygons.is_empty() {
+        return geo::MultiPolygon(vec![]);
+    }
+    let first = polygons.remove(0);
+    let mut result = geo::MultiPolygon(vec![first]);
+    for p in polygons {
+        result = result.union(&geo::MultiPolygon(vec![p]));
+    }
+    result
+}
+
+fn geo_to_geojson_polygon(mp: &geo::MultiPolygon<f64>) -> Option<geojson::Geometry> {
+    if mp.0.len() == 1 {
+        let polygon = &mp.0[0];
+        let exterior: Vec<Vec<f64>> = polygon.exterior().coords().map(|c| vec![c.x, c.y]).collect();
+        let mut rings = vec![exterior];
+        for interior in polygon.interiors() {
+            rings.push(interior.coords().map(|c| vec![c.x, c.y]).collect());
+        }
+        return Some(geojson::Geometry::new(geojson::Value::Polygon(rings)));
+    }
+    let mut polygons = Vec::new();
+    for polygon in &mp.0 {
+        let exterior: Vec<Vec<f64>> = polygon.exterior().coords().map(|c| vec![c.x, c.y]).collect();
+        let mut rings = vec![exterior];
+        for interior in polygon.interiors() {
+            rings.push(interior.coords().map(|c| vec![c.x, c.y]).collect());
+        }
+        polygons.push(rings);
+    }
+    Some(geojson::Geometry::new(geojson::Value::MultiPolygon(polygons)))
+}
+
+fn buffer_linestring(coords: &[Vec<f64>], distance: f64, segments: u32) -> Option<geojson::Geometry> {
+    if coords.len() < 2 { return None; }
+    let mut circles = Vec::new();
+    for c in coords {
+        circles.push(geo_polygon_from_circle(c[1], c[0], distance, segments));
+    }
+    let merged = merge_geo_polygons(circles);
+    geo_to_geojson_polygon(&merged)
+}
+
+fn buffer_polygon_rings(rings: &[Vec<Vec<f64>>], distance: f64, segments: u32) -> Option<geojson::Geometry> {
+    let Some(outer) = rings.first() else { return None; };
+    let mut circles = Vec::new();
+    for c in outer {
+        circles.push(geo_polygon_from_circle(c[1], c[0], distance, segments));
+    }
+    let merged = merge_geo_polygons(circles);
+    geo_to_geojson_polygon(&merged)
+}
+
+// --- Clip / Intersect bbox check ---
+
+fn geojson_bbox_intersects(geom: &geojson::Geometry, bbox: &[f64; 4]) -> bool {
+    let Some(geom_bbox) = geojson_geometry_bbox(geom) else { return false; };
+    // Check if bounding boxes overlap
+    !(geom_bbox[2] < bbox[0] || geom_bbox[0] > bbox[2] || geom_bbox[3] < bbox[1] || geom_bbox[1] > bbox[3])
+}
+
+fn geojson_geometry_bbox(geom: &geojson::Geometry) -> Option<[f64; 4]> {
+    use geojson::Value;
+    let coords = match &geom.value {
+        Value::Point(c) => vec![c.as_slice()],
+        Value::MultiPoint(cs) | Value::LineString(cs) => cs.iter().map(|c| c.as_slice()).collect(),
+        Value::MultiLineString(rings) | Value::Polygon(rings) => {
+            rings.iter().flat_map(|r| r.iter().map(|c| c.as_slice())).collect()
+        }
+        Value::MultiPolygon(polys) => {
+            polys.iter().flat_map(|p| p.iter().flat_map(|r| r.iter().map(|c| c.as_slice()))).collect()
+        }
+        Value::GeometryCollection(geoms) => {
+            let mut min_x = f64::MAX;
+            let mut min_y = f64::MAX;
+            let mut max_x = f64::MIN;
+            let mut max_y = f64::MIN;
+            for g in geoms {
+                if let Some(b) = geojson_geometry_bbox(g) {
+                    min_x = min_x.min(b[0]);
+                    min_y = min_y.min(b[1]);
+                    max_x = max_x.max(b[2]);
+                    max_y = max_y.max(b[3]);
+                }
+            }
+            return if min_x <= max_x { Some([min_x, min_y, max_x, max_y]) } else { None };
+        }
+    };
+    if coords.is_empty() { return None; }
+    let mut min_x = f64::MAX;
+    let mut min_y = f64::MAX;
+    let mut max_x = f64::MIN;
+    let mut max_y = f64::MIN;
+    for c in coords {
+        if c.len() >= 2 {
+            min_x = min_x.min(c[0]);
+            min_y = min_y.min(c[1]);
+            max_x = max_x.max(c[0]);
+            max_y = max_y.max(c[1]);
+        }
+    }
+    Some([min_x, min_y, max_x, max_y])
+}
+
+// --- Dissolve ---
+
+fn dissolve_by_field(fc: &geojson::FeatureCollection, field: &str) -> Vec<geojson::Feature> {
+    use std::collections::BTreeMap;
+    let mut groups: BTreeMap<String, Vec<&geojson::Feature>> = BTreeMap::new();
+    let mut null_key = "__NULL__".to_string();
+
+    for feature in &fc.features {
+        let key = feature.properties.as_ref()
+            .and_then(|p| p.get(field))
+            .map(|v| {
+                if v.is_null() { null_key.clone() }
+                else if let Some(s) = v.as_str() { s.to_string() }
+                else { v.to_string() }
+            })
+            .unwrap_or_else(|| { null_key.clone() });
+        groups.entry(key).or_default().push(feature);
+    }
+
+    let mut result = Vec::new();
+    for (key, features) in &groups {
+        if features.len() == 1 {
+            result.push((*features[0]).clone());
+            continue;
+        }
+
+        // Merge geometries
+        let mut merged_geo: Option<geo::MultiPolygon<f64>> = None;
+        let mut merged_props = serde_json::Map::new();
+        merged_props.insert(field.to_string(), serde_json::Value::String(key.clone()));
+
+        for feature in features {
+            if let Some(ref geom) = feature.geometry {
+                if let Some(mp) = geojson_to_geo_polygon(geom) {
+                    merged_geo = Some(match merged_geo {
+                        None => mp,
+                        Some(acc) => {
+                            use geo::BooleanOps;
+                            acc.union(&mp)
+                        }
+                    });
+                }
+            }
+            // Merge non-null properties from first feature
+            if merged_props.len() <= 1 {
+                if let Some(ref props) = feature.properties {
+                    for (k, v) in props {
+                        if k != field && !merged_props.contains_key(k) {
+                            merged_props.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(poly) = merged_geo {
+            if let Some(geom) = geo_to_geojson_polygon(&poly) {
+                let mut f = geojson::Feature {
+                    bbox: None,
+                    geometry: Some(geom),
+                    id: None,
+                    properties: Some(merged_props),
+                    foreign_members: Default::default(),
+                };
+                result.push(f);
+            }
+        }
+    }
+
+    result
+}
+
+fn geojson_to_geo_polygon(geom: &geojson::Geometry) -> Option<geo::MultiPolygon<f64>> {
+    use geo::{Coord, LineString, Polygon};
+    match &geom.value {
+        geojson::Value::Polygon(rings) => {
+            let exterior_coords: Vec<Coord> = rings.first()?
+                .iter().map(|c| Coord { x: c[0], y: c[1] }).collect();
+            let exterior = LineString::new(exterior_coords);
+            let interiors: Vec<LineString> = rings[1..].iter().map(|ring| {
+                LineString::new(ring.iter().map(|c| Coord { x: c[0], y: c[1] }).collect())
+            }).collect();
+            Some(geo::MultiPolygon(vec![Polygon::new(exterior, interiors)]))
+        }
+        geojson::Value::MultiPolygon(polys) => {
+            let mut result = Vec::new();
+            for rings in polys {
+                let exterior_coords: Vec<Coord> = rings.first()?
+                    .iter().map(|c| Coord { x: c[0], y: c[1] }).collect();
+                let exterior = LineString::new(exterior_coords);
+                let interiors: Vec<LineString> = rings[1..].iter().map(|ring| {
+                    LineString::new(ring.iter().map(|c| Coord { x: c[0], y: c[1] }).collect())
+                }).collect();
+                result.push(Polygon::new(exterior, interiors));
+            }
+            Some(geo::MultiPolygon(result))
+        }
+        _ => None,
     }
 }
 

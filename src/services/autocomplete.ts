@@ -15,6 +15,10 @@ const OPERATIONS: Suggestion[] = [
   { label: 'simplify', kind: 'operation', insertText: 'simplify' },
   { label: 'field_calculate', kind: 'operation', insertText: 'field_calculate' },
   { label: 'validate_geometry', kind: 'operation', insertText: 'validate_geometry' },
+  { label: 'buffer', kind: 'operation', insertText: 'buffer' },
+  { label: 'clip', kind: 'operation', insertText: 'clip' },
+  { label: 'intersect', kind: 'operation', insertText: 'intersect' },
+  { label: 'dissolve', kind: 'operation', insertText: 'dissolve' },
   { label: 'export', kind: 'operation', insertText: 'export' },
 ];
 

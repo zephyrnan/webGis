@@ -98,6 +98,35 @@ export class MockBrainGateway implements BrainGateway {
       });
     }
 
+    if (mentionsBuffer(normalized)) {
+      operations.push({
+        action: 'buffer',
+        distance: extractBufferDistance(normalized),
+        segments: 32,
+      });
+    }
+
+    if (mentionsClip(normalized)) {
+      const bbox = extractBbox(normalized, input.metadata);
+      if (bbox) {
+        operations.push({ action: 'clip', bbox });
+      }
+    }
+
+    if (mentionsIntersect(normalized)) {
+      const bbox = extractBbox(normalized, input.metadata);
+      if (bbox) {
+        operations.push({ action: 'intersect', bbox });
+      }
+    }
+
+    if (mentionsDissolve(normalized)) {
+      const field = extractDissolveField(normalized, input.metadata);
+      if (field) {
+        operations.push({ action: 'dissolve', field });
+      }
+    }
+
     if (mentionsExport(normalized) || operations.length > 0) {
       operations.push({ action: 'export', format: 'geojson' });
     }
@@ -253,6 +282,48 @@ function extractEncoding(command: string): string {
 
 function mentionsExport(command: string) {
   return command.includes('导出') || command.includes('geojson') || command.includes('export') || command.includes('download');
+}
+
+function mentionsBuffer(command: string) {
+  return command.includes('缓冲') || command.includes('buffer') || command.includes('膨胀') || command.includes('expand');
+}
+
+function extractBufferDistance(command: string): number {
+  const match = command.match(/(\d+\.?\d*)/);
+  if (match) {
+    const val = parseFloat(match[1]);
+    if (val > 0) return val;
+  }
+  return 100;
+}
+
+function mentionsClip(command: string) {
+  return command.includes('裁剪') || command.includes('clip') || command.includes('crop') || command.includes('trim');
+}
+
+function mentionsIntersect(command: string) {
+  return command.includes('相交') || command.includes('intersect') || command.includes('intersection') || command.includes('求交');
+}
+
+function mentionsDissolve(command: string) {
+  return command.includes('融合') || command.includes('合并') || command.includes('dissolve') || command.includes('merge') || command.includes('union');
+}
+
+function extractBbox(command: string, metadata: GeoSurgicalMetadata): [number, number, number, number] | null {
+  // Try to extract bbox from metadata if available
+  if (metadata.bbox) return metadata.bbox;
+  return null;
+}
+
+function extractDissolveField(command: string, metadata: GeoSurgicalMetadata): string | null {
+  // Try to find a field name mentioned in the command
+  for (const field of metadata.fields) {
+    if (command.includes(field.name.toLowerCase())) return field.name;
+  }
+  // Default fallback
+  if (command.includes('name')) return 'name';
+  if (metadata.fields.length > 0) return metadata.fields[0].name;
+  return null;
 }
 
 function assertField(fieldNames: Set<string>, field: string) {

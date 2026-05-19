@@ -35,6 +35,24 @@ pub enum Operation {
     },
     #[serde(rename = "validate_geometry")]
     ValidateGeometry { mode: String },
+    #[serde(rename = "buffer")]
+    Buffer {
+        distance: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        segments: Option<u32>,
+    },
+    #[serde(rename = "clip")]
+    Clip {
+        bbox: [f64; 4],
+    },
+    #[serde(rename = "intersect")]
+    Intersect {
+        bbox: [f64; 4],
+    },
+    #[serde(rename = "dissolve")]
+    Dissolve {
+        field: String,
+    },
     #[serde(rename = "export")]
     Export { format: String },
     #[serde(rename = "noop")]

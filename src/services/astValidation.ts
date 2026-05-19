@@ -41,6 +41,23 @@ const operationSchema = z.discriminatedUnion('action', [
     mode: z.enum(['check', 'check_and_fix']),
   }),
   z.object({
+    action: z.literal('buffer'),
+    distance: z.number().finite().positive(),
+    segments: z.number().int().positive().optional(),
+  }),
+  z.object({
+    action: z.literal('clip'),
+    bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+  }),
+  z.object({
+    action: z.literal('intersect'),
+    bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+  }),
+  z.object({
+    action: z.literal('dissolve'),
+    field: z.string().min(1),
+  }),
+  z.object({
     action: z.literal('rename_field'),
     from: z.string().min(1),
     to: z.string().min(1),
@@ -95,6 +112,10 @@ export function validateAst(ast: unknown, metadata: GeoSurgicalMetadata): Valida
       return missingField(operation.from);
     }
 
+    if (operation.action === 'dissolve' && !fieldNames.has(operation.field)) {
+      return missingField(operation.field);
+    }
+
     if (operation.action === 'drop_empty' || operation.action === 'filter_area') {
       risks.push('ast.risk');
     }
@@ -113,6 +134,18 @@ export function validateAst(ast: unknown, metadata: GeoSurgicalMetadata): Valida
 
     if (operation.action === 'validate_geometry' && operation.mode === 'check_and_fix') {
       risks.push('ast.riskValidateGeometry');
+    }
+
+    if (operation.action === 'buffer') {
+      risks.push('ast.riskBuffer');
+    }
+
+    if (operation.action === 'clip' || operation.action === 'intersect') {
+      risks.push('ast.riskClip');
+    }
+
+    if (operation.action === 'dissolve') {
+      risks.push('ast.riskDissolve');
     }
   }
 
