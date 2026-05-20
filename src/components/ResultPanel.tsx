@@ -20,7 +20,7 @@ export function ResultPanel({ result, history, historyIndex, onUndo, onRedo, onJ
   const [copied, setCopied] = useState(false);
 
   const { url, size } = useMemo(() => {
-    if (result?.kind !== 'geojson') return { url: null, size: 0 };
+    if (result?.kind !== 'geojson' && result?.kind !== 'shapefile') return { url: null, size: 0 };
     // Real WASM: Worker 已创建 Blob URL，直接使用，不重新序列化
     if (result.blobUrl) return { url: result.blobUrl, size: 0 };
     // Mock 模式: content 是 JS 对象，需要序列化创建 Blob
@@ -118,14 +118,16 @@ export function ResultPanel({ result, history, historyIndex, onUndo, onRedo, onJ
             {t('result.download')}
           </a>
         ) : null}
-        <button
-          className="inline-flex items-center gap-2 rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-300 transition hover:border-cyan-400 hover:text-white"
-          type="button"
-          onClick={handleCopy}
-        >
-          {copied ? <Check className="size-4 text-green-400" /> : <Copy className="size-4" />}
-          {copied ? t('result.copied') : t('result.copyJson')}
-        </button>
+        {result?.kind !== 'shapefile' && (
+          <button
+            className="inline-flex items-center gap-2 rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-300 transition hover:border-cyan-400 hover:text-white"
+            type="button"
+            onClick={handleCopy}
+          >
+            {copied ? <Check className="size-4 text-green-400" /> : <Copy className="size-4" />}
+            {copied ? t('result.copied') : t('result.copyJson')}
+          </button>
+        )}
       </div>
     </section>
   );

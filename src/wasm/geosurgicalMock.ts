@@ -2,7 +2,7 @@ import type { GeoSurgicalAst, GeoSurgicalOperation } from '../types/ast';
 import type { GeoField, GeoFieldType, GeoSurgicalMetadata } from '../types/metadata';
 import { getFileExtension } from '../services/fileGuards';
 import { sampleGeojson } from '../test/sampleGeojson';
-import type { GeoSurgicalWasm, MetadataInputContext, ExecuteInputContext } from './geosurgicalWasm';
+import type { GeoSurgicalWasm, MetadataInputContext } from './geosurgicalWasm';
 import { encodeSurgeryEnvelope, parseAst } from './geosurgicalWasm';
 
 export function createMockGeoSurgicalWasm(): GeoSurgicalWasm {

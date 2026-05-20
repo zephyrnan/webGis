@@ -271,3 +271,73 @@ Vite transform 中间件在编译期将 `@wasm/geosurgical` 解析为绝对路�
 所有 4 个新操作同步更新：`src/types/ast.ts`（类型定义）、`src/services/astValidation.ts`（Zod schema + 风险检测）、`src/services/llmBrain.ts`（prompt + normalizeOperation）、`src/services/brain.ts`（Mock Brain 关键词匹配）、`src/services/autocomplete.ts`（自动补全）、`src/i18n/locales.ts`（6 语言翻译）、`schemas/ast-schema.json`（JSON Schema）。
 
 - Resolution: cargo check 通过，TypeScript 类型检查和生产构建均通过。
+
+---
+
+## BUG-007: Mock Brain English CRS target detection treated source EPSG:4326 as target
+
+- Status: Fixed
+- Date: 2026-05-20
+- Scenario: Run `npm test`; `MockBrainGateway` handles `Convert EPSG:4326 to GCJ-02 and export GeoJSON`.
+- Symptom: The generated AST used `{ "to": "EPSG:4326" }` instead of `{ "to": "GCJ-02" }`, causing `src/services/brain.test.ts` to fail.
+- Impact: English commands that explicitly say `to GCJ-02` could be planned as a no-op or wrong-direction CRS transform in Mock Brain mode.
+- Files: `src/services/brain.ts`, `src/services/brain.test.ts`.
+- Attempts: Reproduced with `npm --prefix "C:\Users\hhn\Desktop\frontend\React\webGis" test`.
+- Resolution: Updated Mock Brain CRS target detection to prioritize explicit `to GCJ-02` / `into GCJ-02` and Chinese 火星 target phrases before treating `4326` as an EPSG:4326 target.
+- Next Steps: Re-run unit tests and full validation commands.
+
+---
+
+## BUG-008: Shapefile result kind missing from TypeScript protocol union
+
+- Status: Fixed
+- Date: 2026-05-20
+- Scenario: Run `npm run typecheck` after large-dataset export changes added `shapefile` handling in result UI.
+- Symptom: TypeScript reported `TS2367` comparisons because `SurgeryResult.kind` only allowed `geojson | summary` while UI checked for `shapefile`.
+- Impact: Production build and typecheck failed even though Rust output could emit shapefile result metadata.
+- Files: `src/types/protocol.ts`, `src/components/MapPreview.tsx`, `src/components/ResultPanel.tsx`.
+- Attempts: Reproduced with `npm --prefix "C:\Users\hhn\Desktop\frontend\React\webGis" run typecheck`.
+- Resolution: Added `shapefile` to the `SurgeryResult.kind` TypeScript union so protocol types match frontend handling and Rust envelope output.
+- Next Steps: Re-run typecheck and build.
+
+---
+
+## VALIDATION-009: npm audit unavailable on configured registry mirror
+
+- Status: Open
+- Date: 2026-05-20
+- Scenario: Run `npm --prefix "C:\Users\hhn\Desktop\frontend\React\webGis" audit --audit-level=high` during pre-commit validation.
+- Symptom: npm returned `404 Not Found` and `[NOT_IMPLEMENTED] /-/npm/v1/security/* not implemented yet` from `https://registry.npmmirror.com/-/npm/v1/security/advisories/bulk`.
+- Impact: Dependency security audit could not be completed in this environment; tests/typecheck/build are unaffected.
+- Files: npm registry configuration/environment; no source file changes required.
+- Attempts: Ran npm audit with high severity threshold.
+- Resolution: Pending.
+- Next Steps: Re-run audit against the official npm registry or a mirror that implements npm audit endpoints.
+
+---
+
+## VALIDATION-010: Non-blocking validation warnings remain
+
+- Status: Open
+- Date: 2026-05-20
+- Scenario: Run `cargo check` and `npm run build` during validation.
+- Symptom: Cargo reported unused mutability/dead field warnings; Vite reported a main chunk larger than 500 kB after minification.
+- Impact: Commands pass successfully, but warnings should be reviewed before production hardening.
+- Files: `src-wasm/src/dispatcher.rs`, `src-wasm/src/metadata.rs`, Vite production bundle output.
+- Attempts: Captured warnings during validation; no functional change made because they are non-blocking and outside the requested fix scope.
+- Resolution: Pending.
+- Next Steps: Remove unused Rust mutability/dead field when touching those modules; consider route/code splitting or chunk-size configuration if bundle size becomes a product concern.
+
+---
+
+## VALIDATION-011: ESLint scanned generated Rust/WASM artifacts
+
+- Status: Fixed
+- Date: 2026-05-20
+- Scenario: Run `npm run lint` during validation.
+- Symptom: ESLint reported generated `src-wasm/pkg/geosurgical_wasm.js` and Rust documentation files under `src-wasm/target/doc/**`, including browser globals and generated unused variables.
+- Impact: Lint failed on generated artifacts instead of project-authored source files.
+- Files: `eslint.config.js`, `src-wasm/pkg/**`, `src-wasm/target/**`.
+- Attempts: Ran `npm --prefix "C:\Users\hhn\Desktop\frontend\React\webGis" run lint` and inspected failure paths.
+- Resolution: Added `src-wasm/pkg/**` and `src-wasm/target/**` to ESLint ignores alongside `dist`.
+- Next Steps: Re-run lint.

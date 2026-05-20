@@ -68,10 +68,9 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
     select.on('select', (e) => {
       const feature = e.selected[0];
       if (feature) {
-        const props = feature.getProperties();
-        // Remove geometry from popup display
-        const { geometry: _geom, ...rest } = props;
-        setSelectedProps(rest);
+        const props = { ...feature.getProperties() };
+        delete props.geometry;
+        setSelectedProps(props);
         const geometry = feature.getGeometry();
         if (geometry) {
           const extent = geometry.getExtent();
@@ -99,7 +98,7 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       resultLayerRef.current = null;
     }
 
-    if (result?.kind !== 'geojson') return;
+    if (result?.kind !== 'geojson' && result?.kind !== 'shapefile') return;
 
     // Convex hull preview layer (blue dashed outline — lightweight for 794k features)
     if (result.previewContent) {
@@ -182,9 +181,9 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
     newSelect.on('select', (e) => {
       const feature = e.selected[0];
       if (feature) {
-        const props = feature.getProperties();
-        const { geometry: _geom, ...rest } = props;
-        setSelectedProps(rest);
+        const props = { ...feature.getProperties() };
+        delete props.geometry;
+        setSelectedProps(props);
         const geometry = feature.getGeometry();
         if (geometry && popupOverlay) {
           const extent = geometry.getExtent();
@@ -259,7 +258,7 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
 
   const geoJsonContent = result?.kind === 'geojson' ? result.content : null;
   // blobUrl/previewContent 模式从 summary 取数量，content 模式直接数 features
-  const featureCount = result?.kind === 'geojson'
+  const featureCount = (result?.kind === 'geojson' || result?.kind === 'shapefile')
     ? ((result.blobUrl || result.previewContent)
       ? (result.summary.outputFeatureCount ?? 0)
       : (geoJsonContent as GeoJSON.FeatureCollection)?.features?.length ?? 0)
@@ -280,7 +279,7 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       <div className="flex items-center justify-between border-b border-slate-800 p-5">
         <div>
           <h2 className="text-lg font-semibold text-white">{t('map.title')}</h2>
-          {result?.kind === 'geojson' && featureCount > 0 && (
+          {(result?.kind === 'geojson' || result?.kind === 'shapefile') && featureCount > 0 && (
             <p className="mt-1 text-xs text-slate-400">
               {featureCount.toLocaleString()} features
               {featureCount > 10000 && ' (WebGL rendering)'}

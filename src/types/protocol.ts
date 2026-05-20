@@ -29,7 +29,7 @@ export type UndoCapability = {
 };
 
 export type SurgeryResult = {
-  kind: 'geojson' | 'summary';
+  kind: 'geojson' | 'shapefile' | 'summary';
   fileName: string;
   content?: GeoJSON.FeatureCollection;
   previewContent?: GeoJSON.FeatureCollection;

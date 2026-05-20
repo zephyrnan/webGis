@@ -2,7 +2,7 @@ import { createMockGeoSurgicalWasm } from '../wasm/geosurgicalMock';
 import { decodeSurgeryEnvelope } from '../wasm/geosurgicalWasm';
 import type { GeoSurgicalWasm } from '../wasm/geosurgicalWasm';
 import type { GeoSurgicalMetadata } from '../types/metadata';
-import type { WorkerRequest, WorkerResponse, ProgressEvent } from '../types/protocol';
+import type { WorkerRequest, WorkerResponse } from '../types/protocol';
 
 let wasm: GeoSurgicalWasm;
 let wasmMode: 'real' | 'mock' = 'mock';

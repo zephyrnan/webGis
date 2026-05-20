@@ -193,6 +193,7 @@ function mentionsCrsTransform(command: string) {
 
 function detectCrsTarget(command: string): 'EPSG:3857' | 'EPSG:4326' | 'GCJ-02' {
   if (command.includes('3857') || command.includes('mercator') || command.includes('投影')) return 'EPSG:3857';
+  if (command.includes('火星') || /(?:to|into)\s+gcj[-\s]?02/.test(command)) return 'GCJ-02';
   if (command.includes('反纠偏') || command.includes('反向') || command.includes('4326')) return 'EPSG:4326';
   return 'GCJ-02';
 }
