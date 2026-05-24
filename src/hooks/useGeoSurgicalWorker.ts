@@ -88,8 +88,21 @@ export function useGeoSurgicalWorker() {
       }
     };
 
-    worker.onerror = () => {
-      setError({ code: 'WORKER_RUNTIME_ERROR', message: 'Worker 运行时错误。', recoverable: false });
+    worker.onerror = (event) => {
+      setError({
+        code: 'WORKER_RUNTIME_ERROR',
+        message: event.message ? `Worker 运行时错误：${event.message}` : 'Worker 运行时错误。',
+        recoverable: false,
+      });
+      setStatus('failed');
+    };
+
+    worker.onmessageerror = () => {
+      setError({
+        code: 'WORKER_MESSAGE_ERROR',
+        message: 'Worker 消息反序列化失败，请检查传输的数据是否可克隆。',
+        recoverable: false,
+      });
       setStatus('failed');
     };
 

@@ -20,9 +20,12 @@ export function ErrorCallout({ error }: ErrorCalloutProps) {
 
   if (!error) return null;
 
+  const translatedMessage = resolveI18nMessage(error.message, t);
   const errorKey = `error.${error.code}`;
   const translatedCode = t(errorKey);
-  const message = translatedCode === errorKey ? resolveI18nMessage(error.message, t) : translatedCode;
+  const message = translatedMessage === error.message && error.message === error.code && translatedCode !== errorKey
+    ? translatedCode
+    : translatedMessage;
 
   return (
     <div className="rounded-2xl border border-amber-400/40 bg-amber-950/40 p-4 text-sm text-amber-100">

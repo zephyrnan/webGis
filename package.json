@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "docker:up": "docker-compose up --build -d && echo \"\n🚀 WebGIS 容器已成功启动！\n👉 请按住 Ctrl 并在浏览器打开: http://localhost:8080\n\"",
+    "docker:down": "docker-compose down",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

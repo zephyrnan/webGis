@@ -323,13 +323,12 @@ fn extract_shp_metadata(input: &[u8], file_name: &str, file_size: f64) -> Result
 
 struct DbfMetadata {
     fields: Vec<GeoField>,
-    total_field_count: usize,
     record_count: usize,
 }
 
 fn parse_dbf_with_encoding(input: &[u8], encoding: Option<&'static Encoding>) -> DbfMetadata {
     if input.len() < 32 {
-        return DbfMetadata { fields: vec![], total_field_count: 0, record_count: 0 };
+        return DbfMetadata { fields: vec![], record_count: 0 };
     }
 
     let record_count = u32::from_le_bytes([input[4], input[5], input[6], input[7]]) as usize;
@@ -389,10 +388,9 @@ fn parse_dbf_with_encoding(input: &[u8], encoding: Option<&'static Encoding>) ->
         }
     }
 
-    let total_field_count = fields.len();
     fields.truncate(MAX_FIELDS);
 
-    DbfMetadata { fields, total_field_count, record_count }
+    DbfMetadata { fields, record_count }
 }
 
 fn decode_bytes(bytes: &[u8], encoding: Option<&'static Encoding>) -> String {

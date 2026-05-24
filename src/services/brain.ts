@@ -40,11 +40,13 @@ export class MockBrainGateway implements BrainGateway {
 
     if (mentionsArea(normalized)) {
       assertField(fieldNames, 'area');
+      const value = normalized.includes('10') ? 10 : 0;
+      const operator = mentionsLessThan(normalized) || (value === 0 && mentionsEqualToZero(normalized)) ? '>' : '>=';
       operations.push({
         action: 'filter_area',
         field: 'area',
-        operator: mentionsLessThan(normalized) ? '>' : '>=',
-        value: normalized.includes('10') ? 10 : 0,
+        operator,
+        value,
       });
     }
 
@@ -166,6 +168,10 @@ function mentionsArea(command: string) {
 
 function mentionsLessThan(command: string) {
   return command.includes('小于') || command.includes('<') || command.includes('less than') || command.includes('below');
+}
+
+function mentionsEqualToZero(command: string) {
+  return command.includes('为 0') || command.includes('等于 0') || command.includes('is 0') || command.includes('equals 0') || command.includes('= 0');
 }
 
 function mentionsEmptyName(command: string) {

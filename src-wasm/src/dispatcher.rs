@@ -1151,7 +1151,7 @@ fn geojson_geometry_bbox(geom: &geojson::Geometry) -> Option<[f64; 4]> {
 fn dissolve_by_field(fc: &geojson::FeatureCollection, field: &str) -> Vec<geojson::Feature> {
     use std::collections::BTreeMap;
     let mut groups: BTreeMap<String, Vec<&geojson::Feature>> = BTreeMap::new();
-    let mut null_key = "__NULL__".to_string();
+    let null_key = "__NULL__".to_string();
 
     for feature in &fc.features {
         let key = feature.properties.as_ref()
@@ -1203,7 +1203,7 @@ fn dissolve_by_field(fc: &geojson::FeatureCollection, field: &str) -> Vec<geojso
 
         if let Some(poly) = merged_geo {
             if let Some(geom) = geo_to_geojson_polygon(&poly) {
-                let mut f = geojson::Feature {
+                let f = geojson::Feature {
                     bbox: None,
                     geometry: Some(geom),
                     id: None,

@@ -51,4 +51,30 @@ describe('MockBrainGateway', () => {
 
     expect(ast.operations).toContainEqual({ action: 'transform_crs', from: 'EPSG:4326', to: 'GCJ-02' });
   });
+
+  it('uses > operator for "删除 area 为 0" commands', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: '删除 area 为 0 的要素，然后导出 GeoJSON',
+      metadata,
+      schemaVersion: '1.0',
+    });
+
+    expect(ast.operations).toEqual([
+      { action: 'filter_area', field: 'area', operator: '>', value: 0 },
+      { action: 'export', format: 'geojson' },
+    ]);
+  });
+
+  it('uses > operator for English "remove zero-area features" commands', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: 'Remove features where area is 0, then export GeoJSON',
+      metadata,
+      schemaVersion: '1.0',
+    });
+
+    expect(ast.operations).toEqual([
+      { action: 'filter_area', field: 'area', operator: '>', value: 0 },
+      { action: 'export', format: 'geojson' },
+    ]);
+  });
 });

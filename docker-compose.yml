@@ -1,0 +1,16 @@
+services:
+  webgis:
+    # 从当前项目目录读取 Dockerfile 构建镜像。
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # 固定镜像名，方便在 Docker Desktop 的 Images 页面识别。
+    image: geosurgical-webgis:local
+    # 固定容器名，避免 Docker 自动生成随机名字。
+    container_name: geosurgical-webgis
+    ports:
+      # 宿主机端口:容器端口。默认 http://localhost:8080 访问容器内 Nginx 80。
+      # 临时换端口可在 PowerShell 中执行：$env:WEBGIS_PORT="8081"; docker compose up -d
+      - "${WEBGIS_PORT:-8080}:80"
+    # Docker Desktop 重启后自动拉起，除非你手动 docker compose down。
+    restart: unless-stopped

@@ -87,6 +87,45 @@ npm run dev
 npm run build
 ```
 
+### Run with Docker Desktop
+
+Make sure Docker Desktop is running, then build and start the container:
+
+```powershell
+docker compose up --build
+```
+
+Open the app at `http://localhost:8080`.
+
+Useful Docker commands:
+
+```powershell
+# Build the production image only
+docker compose build
+
+# Start in the background
+docker compose up -d
+
+# View logs
+docker compose logs -f webgis
+
+# Stop and remove the container
+docker compose down
+```
+
+The default Docker build uses Mock Brain mode so the container can run without an LLM service. To build with LLM mode, set build-time variables before running Compose:
+
+```powershell
+$env:VITE_BRAIN_MODE="llm"
+$env:VITE_LLM_ENDPOINT="http://localhost:11434"
+$env:VITE_LLM_MODEL="qwen2.5:7b"
+docker compose up --build
+```
+
+Vite `VITE_*` environment variables are injected at build time. If you change `.env` or shell environment values that affect the frontend build, rebuild the Docker image with `docker compose up --build`.
+
+Do not put private API keys into frontend `VITE_*` values for production builds. Vite exposes these values to browser JavaScript.
+
 ### Rebuild Rust WASM
 
 ```bash
@@ -107,6 +146,8 @@ wasm-pack build --target web --release
 | `npm run typecheck` | Run TypeScript project checks. |
 | `npm run lint` | Run ESLint. |
 | `cargo check --manifest-path src-wasm/Cargo.toml` | Check the Rust WASM crate. |
+| `docker compose up --build` | Build and run the production static app in Docker Desktop on port 8080. |
+| `docker compose down` | Stop and remove the local Docker container. |
 
 ## Supported AST Operations
 
@@ -149,7 +190,9 @@ Manual browser verification is still recommended for representative GeoJSON and 
 
 ## Deployment
 
-No production deployment target is configured in this repository. Build with `npm run build` and serve the generated `dist` directory from a static host that supports Worker modules and WASM assets.
+No remote production deployment target is configured in this repository. Build with `npm run build` and serve the generated `dist` directory from a static host that supports Worker modules and WASM assets.
+
+For local containerized preview, Docker Desktop can build the Vite app and serve `dist` with Nginx using the included `Dockerfile`, `nginx.conf`, and `docker-compose.yml`.
 
 ## Known Limitations
 

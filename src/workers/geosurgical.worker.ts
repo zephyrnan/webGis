@@ -6,6 +6,7 @@ import type { WorkerRequest, WorkerResponse } from '../types/protocol';
 
 let wasm: GeoSurgicalWasm;
 let wasmMode: 'real' | 'mock' = 'mock';
+const workerCacheVersion = 'docker-desktop-cache-reset-2026-05-21';
 
 const taskContexts = new Map<string, {
   taskId: string;
@@ -19,6 +20,7 @@ const taskContexts = new Map<string, {
 let wasmLoadError: string | undefined;
 
 const wasmReady = (async () => {
+  console.debug(`GeoSurgical worker ${workerCacheVersion}`);
   try {
     const { createRealGeoSurgicalWasm } = await import('../wasm/geosurgicalRealWasm');
     wasm = createRealGeoSurgicalWasm();

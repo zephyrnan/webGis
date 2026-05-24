@@ -1,0 +1,23 @@
+# 这些内容不发送给 Docker 构建上下文，减少镜像构建体积和干扰。
+node_modules
+dist
+.git
+
+# 本地环境变量不要打进镜像；前端 VITE_* 变量会暴露到浏览器。
+.env
+.env.*
+!.env.example
+
+# Rust WASM 的编译缓存很大，镜像只需要源码和已生成/可构建的前端引用。
+src-wasm/target
+
+# 测试和覆盖率产物不参与生产镜像构建。
+coverage
+playwright-report
+test-results
+
+# 包管理器和系统临时文件。
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+.DS_Store
