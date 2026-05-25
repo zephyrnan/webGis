@@ -13,7 +13,12 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "typecheck": "tsc -b",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "generate:types": "node scripts/generate-types.mjs",
+    "generate:zod": "node scripts/generate-zod.mjs",
+    "generate:rust": "node scripts/generate-rust.mjs",
+    "generate:prompt": "node scripts/generate-prompt.mjs",
+    "generate:all": "node scripts/generate-types.mjs && node scripts/generate-zod.mjs && node scripts/generate-rust.mjs && node scripts/generate-prompt.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "latest",
@@ -40,6 +45,7 @@
     "eslint": "latest",
     "globals": "latest",
     "jsdom": "latest",
+    "json-schema-to-typescript": "^15.0.4",
     "typescript": "latest",
     "typescript-eslint": "latest",
     "vite": "latest",

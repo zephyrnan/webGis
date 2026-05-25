@@ -14,7 +14,12 @@ GeoSurgical is a language-driven spatial-data workbench. Users upload GIS files,
 - Preview GeoJSON output with OpenLayers, WebGL/Canvas switching, feature popups, and attribute table support.
 - Use lightweight convex-hull preview content for very large result sets.
 - Download results using Blob URLs to avoid unnecessary large JSON reserialization.
-- Multi-language UI support.
+- Multi-format export: GeoJSON and CSV.
+- Task history with IndexedDB persistence — restore, delete, and replay past sessions.
+- AST pipeline templates — save, load, export, and import reusable operation chains.
+- Batch processing — apply the same AST pipeline to multiple files with per-file progress tracking.
+- Data quality report — feature delta, encoding fixes, geometry issues, and warnings.
+- Multi-language UI support (zh, en, ja, ko, fr, es).
 
 ## Tech Stack
 
@@ -48,6 +53,7 @@ Core constraints:
 - The Worker owns the uploaded file buffer after transfer.
 - LLM Brain receives metadata summaries and user commands, not full geometry payloads.
 - Operations must be represented as auditable JSON AST before execution.
+- `schemas/ast-schema.json` is the single source of truth for AST types. Run `npm run generate:types` to regenerate TypeScript types.
 
 ## Getting Started
 
@@ -68,11 +74,13 @@ npm install
 
 Copy `.env.example` to `.env` if you want to configure LLM mode. `.env` and `.env.*` are ignored by Git except `.env.example`.
 
+**Security**: This is a pure frontend application — all `VITE_*` values are injected into browser JavaScript at build time. **Do not use remote API keys in production.** The recommended production strategy is a local Ollama instance on the same network.
+
 | Name | Required | Description |
 | --- | --- | --- |
 | `VITE_BRAIN_MODE` | No | `mock` or `llm`; controls Mock Brain vs configured LLM Brain. |
 | `VITE_LLM_ENDPOINT` | No | LLM endpoint, for example local Ollama at `http://localhost:11434`. |
-| `VITE_LLM_API_KEY` | No | API key for OpenAI-compatible providers; not needed for local Ollama. |
+| `VITE_LLM_API_KEY` | No | API key for OpenAI-compatible providers; **not needed for local Ollama, do not use in production**. |
 | `VITE_LLM_MODEL` | No | Model name used by the LLM Brain gateway. |
 
 ### Run
@@ -145,6 +153,7 @@ wasm-pack build --target web --release
 | `npm run test:e2e` | Run Playwright tests. |
 | `npm run typecheck` | Run TypeScript project checks. |
 | `npm run lint` | Run ESLint. |
+| `npm run generate:types` | Generate TypeScript types from `schemas/ast-schema.json`. |
 | `cargo check --manifest-path src-wasm/Cargo.toml` | Check the Rust WASM crate. |
 | `docker compose up --build` | Build and run the production static app in Docker Desktop on port 8080. |
 | `docker compose down` | Stop and remove the local Docker container. |
@@ -172,12 +181,13 @@ wasm-pack build --target web --release
 
 Latest validation status is tracked in `ACCEPTANCE.md`.
 
-Verified on 2026-05-20:
+Verified on 2026-05-24:
 
-- `npm --prefix "C:\Users\hhn\Desktop\frontend\React\webGis" test` — passed, 7 tests.
-- `npm --prefix "C:\Users\hhn\Desktop\frontend\React\webGis" run typecheck` — passed.
-- `cargo check --manifest-path "C:\Users\hhn\Desktop\frontend\React\webGis\src-wasm\Cargo.toml"` — passed with non-blocking warnings.
-- `npm --prefix "C:\Users\hhn\Desktop\frontend\React\webGis" run build` — passed with a non-blocking chunk-size warning.
+- `npm test` — passed, 45 tests.
+- `npm run typecheck` — passed.
+- `npm run generate:types` — passed.
+- `cargo check --manifest-path src-wasm/Cargo.toml` — passed with non-blocking warnings.
+- `npm run build` — passed with a non-blocking chunk-size warning.
 
 Manual browser verification is still recommended for representative GeoJSON and ZIP Shapefile samples before production use.
 
@@ -187,6 +197,8 @@ Manual browser verification is still recommended for representative GeoJSON and 
 - `DESIGN.md` — UI direction and component rules.
 - `ACCEPTANCE.md` — MVP scope and validation status.
 - `BUGS.md` — bug history, validation findings, and resolutions.
+- `ROADMAP.md` — product roadmap and completion status.
+- `docs/deployment.md` — private deployment guide with Docker Compose and Ollama.
 
 ## Deployment
 

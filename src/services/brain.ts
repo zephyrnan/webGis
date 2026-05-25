@@ -130,7 +130,8 @@ export class MockBrainGateway implements BrainGateway {
     }
 
     if (mentionsExport(normalized) || operations.length > 0) {
-      operations.push({ action: 'export', format: 'geojson' });
+      const format = mentionsCsvExport(normalized) ? 'csv' : 'geojson';
+      operations.push({ action: 'export', format });
     }
 
     if (operations.length === 0) {
@@ -289,6 +290,10 @@ function extractEncoding(command: string): string {
 
 function mentionsExport(command: string) {
   return command.includes('导出') || command.includes('geojson') || command.includes('export') || command.includes('download');
+}
+
+function mentionsCsvExport(command: string) {
+  return command.includes('csv') || command.includes('表格') || command.includes('table');
 }
 
 function mentionsBuffer(command: string) {

@@ -1,3 +1,7 @@
+// AST types are auto-generated from schemas/ast-schema.json — do not edit manually.
+// Run: npm run generate:rust
+// Non-AST types (metadata, result, envelope) are preserved from the previous version.
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,15 +22,30 @@ pub enum Operation {
         value: f64,
     },
     #[serde(rename = "drop_empty")]
-    DropEmpty { field: String },
+    DropEmpty {
+        field: String,
+    },
     #[serde(rename = "rename_field")]
-    RenameField { from: String, to: String },
+    RenameField {
+        from: String,
+        to: String,
+    },
     #[serde(rename = "transform_crs")]
-    TransformCrs { from: String, to: String },
+    TransformCrs {
+        from: String,
+        to: String,
+    },
     #[serde(rename = "fix_encoding")]
-    FixEncoding { from: String, to: String },
+    FixEncoding {
+        from: String,
+        to: String,
+    },
     #[serde(rename = "simplify")]
-    Simplify { tolerance: f64, preserve_topology: Option<bool> },
+    Simplify {
+        tolerance: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        preserve_topology: Option<bool>,
+    },
     #[serde(rename = "field_calculate")]
     FieldCalculate {
         target_field: String,
@@ -34,7 +53,9 @@ pub enum Operation {
         operands: Vec<String>,
     },
     #[serde(rename = "validate_geometry")]
-    ValidateGeometry { mode: String },
+    ValidateGeometry {
+        mode: String,
+    },
     #[serde(rename = "buffer")]
     Buffer {
         distance: f64,
@@ -54,12 +75,19 @@ pub enum Operation {
         field: String,
     },
     #[serde(rename = "export")]
-    Export { format: String },
+    Export {
+        format: String,
+    },
     #[serde(rename = "noop")]
-    Noop { reason: String },
+    Noop {
+        reason: String,
+    },
     #[serde(rename = "need_clarification")]
-    NeedClarification { reason: String },
+    NeedClarification {
+        reason: String,
+    },
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeoField {

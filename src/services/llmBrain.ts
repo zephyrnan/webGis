@@ -3,6 +3,7 @@ import type { GeoSurgicalMetadata } from '../types/metadata';
 import type { BrainGateway } from './brain';
 import { BrainPlanningError } from './brain';
 import { validateAst } from './astValidation';
+import { AVAILABLE_ACTIONS, ACTION_NAMES } from './llmPrompt.generated';
 
 const SYSTEM_PROMPT = `You are a REST API that outputs ONLY raw JSON. Do NOT wrap the JSON in markdown blocks (like \`\`\`json). Do NOT add any conversational text before or after the JSON. Your output must start with '{' and end with '}'.
 
@@ -18,20 +19,7 @@ const SYSTEM_PROMPT = `You are a REST API that outputs ONLY raw JSON. Do NOT wra
 严禁输出解释、markdown、代码块标记、自然语言寒暄或任何 JSON 之外的字符。
 
 ## 可用 actions
-- filter_area: 按数值字段过滤要素。参数: field, operator(>=/>/<=/</=), value
-- drop_empty: 删除指定字段为空的要素。参数: field
-- rename_field: 重命名字段。参数: from, to
-- transform_crs: 坐标系转换。参数: from, to (支持 GCJ-02, EPSG:4326, EPSG:3857)
-- fix_encoding: 编码重构。参数 schema: {"action":"fix_encoding","from":"推测的原始编码","to":"utf-8"}
-- simplify: 几何抽稀（减少顶点数量）。参数: tolerance (容差, 如 0.0001), preserve_topology (可选, 默认 true)
-- field_calculate: 字段计算（对两个操作数执行算术运算）。参数: target_field (目标字段名), operation (add/subtract/multiply/divide), operands (两个操作数，字段名或数字字面量，如 ["population","area"])
-- validate_geometry: 几何校验（检查几何合法性）。参数: mode (check 仅检查, check_and_fix 检查并修复)
-- buffer: 缓冲区（对几何生成缓冲区，圆弧近似）。参数: distance (缓冲距离，单位与坐标系一致), segments (可选，圆弧分段数，默认 32)
-- clip: 裁剪（按边界框裁剪，保留 bbox 内的要素）。参数: bbox [min_x, min_y, max_y, max_y]
-- intersect: 相交（按边界框筛选，保留与 bbox 相交的要素）。参数: bbox [min_x, min_y, max_y, max_y]
-- dissolve: 融合（按字段值分组，合并多边形几何）。参数: field (分组字段名)
-- export: 导出结果。参数: format (目前只支持 geojson)
-- noop: 无法执行时的占位符。参数: reason
+${AVAILABLE_ACTIONS}
 
 ## 约束
 1. 只使用 Metadata 中提供的字段名。如果用户提到的字段不在 Metadata 中，使用 noop action 并在 reason 中说明。
@@ -132,7 +120,7 @@ export class LlmBrainGateway implements BrainGateway {
       `校验错误: ${validationError}`,
       `合法字段: [${fieldNames.map((f) => `"${f}"`).join(', ')}]`,
       layerNames.length ? `合法图层: [${layerNames.map((l) => `"${l}"`).join(', ')}]` : '',
-      '合法 actions: filter_area, drop_empty, rename_field, transform_crs, fix_encoding, simplify, field_calculate, validate_geometry, buffer, clip, intersect, dissolve, export, noop, need_clarification',
+      `合法 actions: ${ACTION_NAMES.join(', ')}`,
       '请只输出修正后的 JSON，不要解释。',
     ].filter(Boolean).join('\n');
 

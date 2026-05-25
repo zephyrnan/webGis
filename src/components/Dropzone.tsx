@@ -5,29 +5,33 @@ import type { StructuredError } from '../types/protocol';
 
 type DropzoneProps = {
   disabled?: boolean;
+  multiple?: boolean;
   onFile(file: File): void;
   onError(error: StructuredError): void;
 };
 
-export function Dropzone({ disabled, onFile, onError }: DropzoneProps) {
+export function Dropzone({ disabled, multiple, onFile, onError }: DropzoneProps) {
   const { language, t } = useI18n();
 
   const handleFiles = (files: FileList | null) => {
-    const file = files?.[0];
-    if (!file) return;
+    if (!files || files.length === 0) return;
 
-    if (!isSupportedGisFile(file.name)) {
-      onError({
-        code: 'UNSUPPORTED_FILE_TYPE',
-        message: language === 'zh'
-          ? `暂不支持 ${file.name}，请上传 ${SUPPORTED_EXTENSIONS.join(' / ')}。`
-          : `${file.name} is not supported. Upload ${SUPPORTED_EXTENSIONS.join(' / ')} instead.`,
-        recoverable: true,
-      });
-      return;
+    for (const file of Array.from(files)) {
+      if (!isSupportedGisFile(file.name)) {
+        onError({
+          code: 'UNSUPPORTED_FILE_TYPE',
+          message: language === 'zh'
+            ? `暂不支持 ${file.name}，请上传 ${SUPPORTED_EXTENSIONS.join(' / ')}。`
+            : `${file.name} is not supported. Upload ${SUPPORTED_EXTENSIONS.join(' / ')} instead.`,
+          recoverable: true,
+        });
+        return;
+      }
     }
 
-    onFile(file);
+    for (const file of Array.from(files)) {
+      onFile(file);
+    }
   };
 
   return (
@@ -47,6 +51,7 @@ export function Dropzone({ disabled, onFile, onError }: DropzoneProps) {
         disabled={disabled}
         type="file"
         accept=".geojson,.json,.zip,.shp"
+        multiple={multiple}
         onChange={(event) => handleFiles(event.target.files)}
       />
     </label>

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Play, Sparkles } from 'lucide-react';
+import { Download, Play, Save, Sparkles, Trash2, Upload } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import { BrainPlanningError, defaultBrainGateway } from '../services/brain';
 import type { BrainGateway } from '../services/brain';
 import { validateAst } from '../services/astValidation';
 import { getSuggestions, applySuggestion } from '../services/autocomplete';
 import type { Suggestion } from '../services/autocomplete';
+import { loadTemplates, saveTemplate, deleteTemplate, exportTemplates, importTemplates } from '../services/templates';
+import type { AstTemplate } from '../services/templates';
 import type { GeoSurgicalAst } from '../types/ast';
 import type { GeoSurgicalMetadata } from '../types/metadata';
 import type { StructuredError } from '../types/protocol';
@@ -17,7 +19,7 @@ type CommandPaletteProps = {
   brainGateway?: BrainGateway;
   onCommandChange(command: string): void;
   onAstReady(ast: GeoSurgicalAst | null, risks: string[]): void;
-  onExecute(ast: GeoSurgicalAst): void;
+  onExecute(ast: GeoSurgicalAst, command?: string): void;
   onError(error: StructuredError | null): void;
 };
 
@@ -39,6 +41,9 @@ export function CommandPalette({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [templates, setTemplates] = useState<AstTemplate[]>([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const gateway = brainGateway ?? defaultBrainGateway;
@@ -62,6 +67,65 @@ export function CommandPalette({
   useEffect(() => {
     updateSuggestions();
   }, [updateSuggestions]);
+
+  useEffect(() => {
+    void loadTemplates().then(setTemplates);
+  }, []);
+
+  const handleSaveTemplate = async () => {
+    if (!plannedAst) return;
+    const name = prompt(t('template.namePrompt'));
+    if (!name) return;
+    const template: AstTemplate = {
+      id: crypto.randomUUID(),
+      name,
+      ast: plannedAst,
+      command,
+      createdAt: Date.now(),
+    };
+    await saveTemplate(template);
+    setTemplates((prev) => [...prev, template]);
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    await deleteTemplate(id);
+    setTemplates((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const handleLoadTemplate = (template: AstTemplate) => {
+    onCommandChange(template.command);
+    setPlannedAst(template.ast);
+    setRisks([]);
+    onAstReady(template.ast, []);
+    setShowTemplates(false);
+  };
+
+  const handleExportTemplates = () => {
+    const json = exportTemplates(templates);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'geosurgical-templates.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportTemplates = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    try {
+      const imported = importTemplates(text);
+      for (const tpl of imported) {
+        await saveTemplate(tpl);
+      }
+      setTemplates((prev) => [...prev, ...imported]);
+    } catch {
+      onError({ code: 'IMPORT_ERROR', message: t('template.importError'), recoverable: true });
+    }
+    e.target.value = '';
+  };
 
   const acceptSuggestion = useCallback((suggestion: Suggestion) => {
     const textarea = textareaRef.current;
@@ -251,10 +315,20 @@ export function CommandPalette({
           className="inline-flex items-center gap-2 rounded-full border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-cyan-300 disabled:cursor-not-allowed disabled:text-slate-600"
           disabled={!plannedAst || disabled}
           type="button"
-          onClick={() => plannedAst && onExecute(plannedAst)}
+          onClick={() => plannedAst && onExecute(plannedAst, command)}
         >
           <Play className="size-4" />
           {t('command.execute')}
+        </button>
+        <button
+          className="inline-flex items-center gap-2 rounded-full border border-slate-700 px-3 py-2 text-xs text-slate-400 transition hover:border-emerald-400 hover:text-emerald-300 disabled:cursor-not-allowed disabled:text-slate-700"
+          disabled={!plannedAst}
+          type="button"
+          onClick={() => void handleSaveTemplate()}
+          title={t('template.save')}
+        >
+          <Save className="size-3.5" />
+          {t('template.save')}
         </button>
       </div>
 
@@ -281,6 +355,75 @@ export function CommandPalette({
           </div>
         </div>
       ) : null}
+
+      <div className="space-y-2">
+        <button
+          className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300"
+          type="button"
+          onClick={() => setShowTemplates((v) => !v)}
+        >
+          {t('template.title')}
+          <span className="rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px]">{templates.length}</span>
+        </button>
+
+        {showTemplates && (
+          <div className="space-y-2">
+            {templates.length > 0 ? (
+              <ul className="space-y-1 max-h-48 overflow-auto">
+                {templates.map((tpl) => (
+                  <li key={tpl.id} className="group flex items-center gap-2 rounded-xl bg-slate-950/70 px-3 py-2">
+                    <button
+                      className="min-w-0 flex-1 text-left"
+                      type="button"
+                      onClick={() => handleLoadTemplate(tpl)}
+                    >
+                      <p className="truncate text-xs font-medium text-slate-200">{tpl.name}</p>
+                      <p className="truncate text-[10px] text-slate-600">{tpl.command}</p>
+                    </button>
+                    <button
+                      className="shrink-0 rounded p-1 text-slate-600 opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                      type="button"
+                      title={t('template.delete')}
+                      onClick={() => void handleDeleteTemplate(tpl.id)}
+                    >
+                      <Trash2 className="size-3" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[11px] text-slate-600">{t('template.empty')}</p>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 hover:border-cyan-400 hover:text-cyan-300"
+                type="button"
+                onClick={handleExportTemplates}
+                disabled={templates.length === 0}
+              >
+                <Download className="size-3" />
+                {t('template.export')}
+              </button>
+              <button
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 hover:border-cyan-400 hover:text-cyan-300"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="size-3" />
+                {t('template.import')}
+              </button>
+              <input
+                ref={fileInputRef}
+                className="hidden"
+                type="file"
+                accept=".json"
+                onChange={(e) => void handleImportTemplates(e)}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

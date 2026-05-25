@@ -4,6 +4,7 @@ import type { GeoSurgicalAst } from '../types/ast';
 import type { HistoryEntry, HistoryState } from '../types/history';
 import type { GeoSurgicalMetadata } from '../types/metadata';
 import type { ProgressEvent, StructuredError, SurgeryResult, UndoCapability, WorkerRequest, WorkerResponse } from '../types/protocol';
+import { saveSession } from '../services/history';
 
 export type WorkerStatus =
   | 'idle'
@@ -29,6 +30,8 @@ export function useGeoSurgicalWorker() {
   const [undo, setUndo] = useState<UndoCapability | null>(null);
   const [history, setHistory] = useState<HistoryState>({ entries: [], currentIndex: -1 });
   const lastAstRef = useRef<GeoSurgicalAst | null>(null);
+  const lastCommandRef = useRef('');
+  const lastFileNameRef = useRef('');
 
   const setupWorker = useCallback(() => {
     const worker = new Worker(new URL('../workers/geosurgical.worker.ts', import.meta.url), { type: 'module' });
@@ -59,18 +62,29 @@ export function useGeoSurgicalWorker() {
         setUndo(response.undo);
         setStatus('completed');
         if (lastAstRef.current) {
+          const entry: HistoryEntry = {
+            id: nanoid(),
+            fileName: lastFileNameRef.current,
+            command: lastCommandRef.current,
+            ast: lastAstRef.current!,
+            resultSnapshot: response.result,
+            timestamp: Date.now(),
+          };
           setHistory((prev) => {
-            const entry: HistoryEntry = {
-              id: nanoid(),
-              ast: lastAstRef.current!,
-              resultSnapshot: response.result,
-              timestamp: Date.now(),
-            };
             const truncated = prev.entries.slice(0, prev.currentIndex + 1);
             return {
               entries: [...truncated, entry],
               currentIndex: truncated.length,
             };
+          });
+          // Persist to IndexedDB (fire-and-forget)
+          void saveSession({
+            id: entry.id,
+            fileName: entry.fileName,
+            command: entry.command,
+            ast: entry.ast,
+            resultSnapshot: entry.resultSnapshot,
+            timestamp: entry.timestamp,
           });
         }
         return;
@@ -130,6 +144,8 @@ export function useGeoSurgicalWorker() {
     setUndo(null);
     setHistory({ entries: [], currentIndex: -1 });
     lastAstRef.current = null;
+    lastCommandRef.current = '';
+    lastFileNameRef.current = file.name;
 
     const buffer = await file.arrayBuffer();
     setStatus('metadata-extracting');
@@ -145,7 +161,7 @@ export function useGeoSurgicalWorker() {
     );
   }, [post]);
 
-  const executeAst = useCallback((ast: GeoSurgicalAst) => {
+  const executeAst = useCallback((ast: GeoSurgicalAst, command?: string) => {
     const taskId = taskIdRef.current;
     if (!taskId) return;
 
@@ -154,6 +170,7 @@ export function useGeoSurgicalWorker() {
     setResult(null);
     setUndo(null);
     lastAstRef.current = ast;
+    lastCommandRef.current = command ?? '';
     post({ type: 'EXECUTE_AST', taskId, ast });
   }, [post]);
 
@@ -263,6 +280,7 @@ export function useGeoSurgicalWorker() {
     progress,
     error,
     result,
+    setResult,
     undo,
     history,
     uploadFile,
@@ -272,5 +290,5 @@ export function useGeoSurgicalWorker() {
     undoHistory,
     redoHistory,
     jumpToHistory,
-  }), [status, engineMode, wasmError, metadata, progress, error, result, undo, history, uploadFile, executeAst, cancelTask, selectLayer, undoHistory, redoHistory, jumpToHistory]);
+  }), [status, engineMode, wasmError, metadata, progress, error, result, setResult, undo, history, uploadFile, executeAst, cancelTask, selectLayer, undoHistory, redoHistory, jumpToHistory]);
 }

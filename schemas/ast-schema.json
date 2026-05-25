@@ -183,7 +183,7 @@
       "additionalProperties": false,
       "properties": {
         "action": { "const": "export" },
-        "format": { "type": "string", "enum": ["geojson"], "description": "导出格式，当前只支持 geojson" }
+        "format": { "type": "string", "enum": ["geojson", "csv"], "description": "导出格式" }
       }
     },
     "noop": {
