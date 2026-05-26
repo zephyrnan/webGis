@@ -20,6 +20,9 @@ GeoSurgical is a language-driven spatial-data workbench. Users upload GIS files,
 - Batch processing — apply the same AST pipeline to multiple files with per-file progress tracking.
 - Data quality report — feature delta, encoding fixes, geometry issues, and warnings.
 - Multi-language UI support (zh, en, ja, ko, fr, es).
+- React ErrorBoundary guards for app-level and map rendering failures.
+- Accessibility coverage for core controls, including labeled inputs, toggle states, disclosure states, and keyboard-operable table sorting.
+- Production hardening with CSP headers, optional Sentry monitoring, GitHub Actions CI, and manual chunk splitting for React/OpenLayers/Zod/Sentry.
 
 ## Tech Stack
 
@@ -29,7 +32,8 @@ GeoSurgical is a language-driven spatial-data workbench. Users upload GIS files,
 - Web Worker API + Transferable Objects
 - Rust + wasm-bindgen + `geo`, `geojson`, `shapefile`, `zip`, `encoding_rs`
 - Zod
-- Vitest and Playwright scripts
+- Sentry React SDK (optional, DSN-controlled)
+- Vitest, Playwright scripts, and GitHub Actions CI
 
 ## Architecture
 
@@ -85,6 +89,7 @@ Copy `.env.example` to `.env` if you want to configure LLM mode. `.env` and `.en
 | `VITE_LLM_ENDPOINT` | No | LLM endpoint, for example local Ollama at `http://localhost:11434`. |
 | `VITE_LLM_API_KEY` | No | API key for OpenAI-compatible providers; **not needed for local Ollama, do not use in production**. |
 | `VITE_LLM_MODEL` | No | Model name used by the LLM Brain gateway. |
+| `VITE_SENTRY_DSN` | No | Enables Sentry frontend error monitoring when provided. |
 
 ### Run
 
@@ -184,13 +189,13 @@ wasm-pack build --target web --release
 
 Latest validation status is tracked in `ACCEPTANCE.md`.
 
-Verified on 2026-05-25:
+Verified on 2026-05-26:
 
-- `npm test` — passed, 45 tests.
 - `npm run typecheck` — passed.
-- `npm run build` — passed.
-- Three-column dashboard layout verified (no global scrollbar, local scrolling).
-- Vercel dark theme applied to all components.
+- `npm test` — passed, 45 tests.
+- `npm run lint` — passed.
+- `npm run build` — passed with split React/OpenLayers/Zod/Sentry chunks.
+- Core accessibility pass completed for labeled controls, toggle/disclosure state, history actions, map popup close, and attribute-table sorting.
 
 Manual browser verification is still recommended for representative GeoJSON and ZIP Shapefile samples before production use.
 
@@ -214,7 +219,6 @@ For local containerized preview, Docker Desktop can build the Vite app and serve
 - Large ZIP Shapefile workflows should be verified with representative files before production use.
 - Real LLM mode depends on a reachable endpoint and model behavior.
 - `npm audit` may fail when npm is configured to a registry mirror that does not implement npm security audit endpoints.
-- Current production build emits a non-blocking chunk-size warning for the main JavaScript bundle.
-- Rust `cargo check` currently reports non-blocking warnings in `dispatcher.rs` and `metadata.rs`.
+- True polygon clipping/intersection geometry is still limited compared with full desktop GIS engines.
 
 See `BUGS.md` for detailed issue history and current validation notes.

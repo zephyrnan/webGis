@@ -36,11 +36,20 @@ export function Dropzone({ disabled, multiple, onFile, onError }: DropzoneProps)
 
   return (
     <label
+      role="button"
+      aria-label={t('dropzone.title')}
+      tabIndex={0}
       className="group flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-4 text-center transition hover:border-zinc-400 hover:bg-zinc-100"
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
         if (!disabled) handleFiles(event.dataTransfer.files);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          (event.currentTarget.querySelector('input[type=file]') as HTMLInputElement)?.click();
+        }
       }}
     >
       <UploadCloud className="mb-2 size-6 text-zinc-400 group-hover:text-zinc-600 transition" />
@@ -52,6 +61,7 @@ export function Dropzone({ disabled, multiple, onFile, onError }: DropzoneProps)
         type="file"
         accept=".geojson,.json,.zip,.shp"
         multiple={multiple}
+        aria-label={t('dropzone.title')}
         onChange={(event) => handleFiles(event.target.files)}
       />
     </label>

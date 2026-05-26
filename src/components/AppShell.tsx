@@ -13,6 +13,7 @@ import { useGeoSurgicalWorker } from '../hooks/useGeoSurgicalWorker';
 import { useBatchProcessor } from '../hooks/useBatchProcessor';
 import { AstPreview } from './AstPreview';
 import { CommandPalette } from './CommandPalette';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Dropzone } from './Dropzone';
 import { HistoryPanel } from './HistoryPanel';
 import { BatchPanel } from './BatchPanel';
@@ -25,6 +26,7 @@ import { ShortcutTags } from './ShortcutTags';
 const MapPreview = lazy(() => import('./MapPreview').then(m => ({ default: m.MapPreview })));
 
 const llmEndpoint = import.meta.env.VITE_LLM_ENDPOINT as string | undefined;
+// SECURITY: VITE_LLM_API_KEY is embedded in frontend JS. Use a backend proxy for production.
 const llmApiKey = import.meta.env.VITE_LLM_API_KEY as string | undefined;
 const llmModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
 const brainMode = import.meta.env.VITE_BRAIN_MODE as string | undefined;
@@ -124,6 +126,7 @@ export function AppShell() {
         </div>
         <div className="flex items-center gap-2">
           <select
+            aria-label="Language"
             className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-[11px] text-zinc-600 outline-none transition hover:border-zinc-400 focus:border-zinc-400"
             value={language}
             onChange={(e) => setLanguage(e.target.value as Language)}
@@ -217,9 +220,11 @@ export function AppShell() {
           {/* Map canvas — fills remaining space */}
           <div className="flex-1 min-h-0 bg-white p-3 pt-0">
             <div className="h-full rounded-lg overflow-hidden border border-zinc-200">
-              <Suspense fallback={<div className="flex h-full items-center justify-center bg-zinc-50 text-xs text-zinc-400">{t('map.loading')}</div>}>
-                <MapPreview result={worker.result} />
-              </Suspense>
+              <ErrorBoundary fallback={<div className="flex h-full items-center justify-center bg-zinc-50 text-xs text-red-400">{t('map.renderError')}</div>}>
+                <Suspense fallback={<div className="flex h-full items-center justify-center bg-zinc-50 text-xs text-zinc-400">{t('map.loading')}</div>}>
+                  <MapPreview result={worker.result} />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           </div>
         </div>

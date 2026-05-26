@@ -296,6 +296,8 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
         <div className="flex items-center gap-1.5">
           {geoJsonContent && featureCount > 0 && (
             <button
+              aria-label={t('map.showTable')}
+              aria-pressed={showTable}
               className={`rounded-md px-2 py-0.5 text-[10px] transition ${
                 showTable
                   ? 'bg-zinc-200 text-zinc-800 border border-zinc-300'
@@ -311,6 +313,8 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
           {originalGeoJson && (
             <>
               <button
+                aria-label={showOriginal ? t('map.hideOriginal') : t('map.showOriginal')}
+                aria-pressed={showOriginal}
                 className={`rounded-md px-2 py-0.5 text-[10px] transition ${
                   showOriginal
                     ? 'bg-orange-50 text-orange-700 border border-orange-300'
@@ -330,6 +334,7 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
                     max={1}
                     step={0.05}
                     value={originalOpacity}
+                    aria-label={t('map.originalOpacity')}
                     onChange={(e) => setOriginalOpacity(parseFloat(e.target.value))}
                     className="w-14 accent-orange-400"
                     title={t('map.opacity')}
@@ -365,6 +370,7 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="font-medium text-zinc-700">{t('map.featurePopup')}</span>
                 <button
+                  aria-label="Close feature popup"
                   className="rounded p-0.5 text-zinc-400 hover:text-zinc-700"
                   type="button"
                   onClick={closePopup}

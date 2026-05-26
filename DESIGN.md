@@ -67,6 +67,7 @@ GeoSurgical is a spatial-data workbench. The interface should feel like a clean,
 
 - Hover: darken border/text, no layout shift.
 - Focus: `border-zinc-400` for inputs, no colored rings.
+- Accessibility: every icon-only control must have an accessible label; toggles expose `aria-pressed`; disclosures expose `aria-expanded`; sortable tables use real buttons and `aria-sort`.
 - Loading: spinner or progress bar, controls stay visible but disabled.
 - Error: inline callout with amber border, not toast-only.
 - Disabled: `opacity-40` or `text-zinc-300`.

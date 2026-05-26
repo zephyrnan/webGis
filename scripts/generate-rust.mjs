@@ -59,10 +59,12 @@ const variants = opRefs.map(generateVariant).join('\n');
 
 // Read the existing types.rs to preserve non-AST types (metadata, result, etc.)
 const existingPath = resolve(__dirname, '../src-wasm/src/types.rs');
-let existingContent = '';
+let existingContent;
 try {
   existingContent = readFileSync(existingPath, 'utf-8');
-} catch {}
+} catch {
+  existingContent = '';
+}
 
 // Extract the manually-maintained types (everything after the Operation enum)
 const manualTypesStart = existingContent.indexOf('\n#[derive(Debug, Clone, Serialize)]\npub struct GeoField');

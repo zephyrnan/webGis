@@ -253,6 +253,10 @@ export function CommandPalette({
       <div className="relative">
         <textarea
           ref={textareaRef}
+          aria-label={t('command.placeholder.ready')}
+          aria-autocomplete="list"
+          aria-expanded={showSuggestions && suggestions.length > 0}
+          role="combobox"
           className="min-h-[72px] w-full resize-none rounded-md border border-zinc-300 bg-white p-3 text-xs text-zinc-800 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 font-mono"
           placeholder={metadata ? t('command.placeholder.ready') : t('command.placeholder.waiting')}
           value={command}
@@ -350,6 +354,7 @@ export function CommandPalette({
 
       <div className="space-y-1.5">
         <button
+          aria-expanded={showTemplates}
           className="flex items-center gap-1.5 text-[10px] text-zinc-400 hover:text-zinc-600 transition"
           type="button"
           onClick={() => setShowTemplates((v) => !v)}

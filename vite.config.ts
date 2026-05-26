@@ -27,6 +27,14 @@ export default defineConfig({
   build: {
     rollupOptions: {
       external: [],
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) return 'react';
+          if (id.includes('node_modules/ol')) return 'openlayers';
+          if (id.includes('node_modules/zod')) return 'validation';
+          if (id.includes('node_modules/@sentry')) return 'monitoring';
+        },
+      },
     },
   },
 });

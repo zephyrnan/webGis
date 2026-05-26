@@ -31,8 +31,11 @@
 - [x] Project dependencies are already installed locally.
 - [x] Unit tests pass — 45 tests across 3 files.
 - [x] TypeScript typecheck passes.
+- [x] ESLint passes.
 - [x] Rust crate check passes — 0 warnings.
-- [x] Production build passes — no chunk-size warning.
+- [x] Production build passes with manual chunks for React/OpenLayers/Zod/Sentry.
+- [x] Core accessibility pass completed for form labels, toggles, disclosures, icon-only actions, and table sort controls.
+- [x] ErrorBoundary, CSP headers, optional Sentry monitoring, and GitHub Actions CI are configured.
 - [x] `npm run generate:types` passes.
 - [x] Security audit passes (0 vulnerabilities, official npm registry).
 - [x] Manual browser verification of upload → metadata → command → result preview/download.
@@ -50,6 +53,10 @@
   - `npm run typecheck` — Passed (post-refactor).
   - `npm test` — Passed, 45 tests (post-refactor).
   - `npm audit --registry https://registry.npmjs.org` — Passed, 0 vulnerabilities.
+  - `npm run typecheck` — Passed (production-readiness pass, 2026-05-26).
+  - `npm test` — Passed, 45 tests (production-readiness pass, 2026-05-26).
+  - `npm run lint` — Passed (production-readiness pass, 2026-05-26).
+  - `npm run build` — Passed with manual chunks (production-readiness pass, 2026-05-26).
 - Manual browser verification (2026-05-25):
   - [x] Page loads correctly with Real WASM indicator.
   - [x] 6-language switching: zh, en, ja, ko, fr, es all render correctly.
@@ -67,3 +74,4 @@
   - All P0 and P1 ROADMAP items completed.
   - All P2 ROADMAP items completed (history, templates, batch, export, quality report).
   - P3.1 (LLM security), P3.2 (deployment), P3.3 partial (TS type generation) completed.
+  - Production-readiness pass added ErrorBoundary, CSP, pinned dependencies, GitHub Actions CI, optional Sentry, accessibility attributes, and Vite manual chunks.

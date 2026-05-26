@@ -93,12 +93,14 @@ export function AttributeTable({ geoJson, onClose }: AttributeTableProps) {
         </div>
         <div className="flex items-center gap-1.5">
           <input
+            aria-label={t('map.filterTable')}
             className="w-40 rounded-md border border-zinc-300 bg-white px-2 py-1 text-[10px] text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-zinc-400"
             placeholder={t('map.filterTable')}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
           <button
+            aria-label="Close attribute table"
             className="rounded p-0.5 text-zinc-400 hover:text-zinc-700"
             type="button"
             onClick={onClose}
@@ -120,18 +122,22 @@ export function AttributeTable({ geoJson, onClose }: AttributeTableProps) {
               {columns.map((col) => (
                 <th
                   key={col}
-                  className="cursor-pointer select-none border-b border-zinc-200 px-2 py-1.5 text-left font-medium text-zinc-500 hover:text-zinc-700"
+                  aria-sort={sortField === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                  className="border-b border-zinc-200 px-2 py-1.5 text-left font-medium text-zinc-500"
                   style={{ minWidth: 70 }}
-                  onClick={() => toggleSort(col)}
                 >
-                  <span className="inline-flex items-center gap-1">
-                    {col}
+                  <button
+                    className="inline-flex max-w-full items-center gap-1 truncate hover:text-zinc-700"
+                    type="button"
+                    onClick={() => toggleSort(col)}
+                  >
+                    <span className="truncate">{col}</span>
                     {sortField === col && (
                       sortDir === 'asc'
-                        ? <ArrowUp className="size-2.5 text-zinc-400" />
-                        : <ArrowDown className="size-2.5 text-zinc-400" />
+                        ? <ArrowUp className="size-2.5 shrink-0 text-zinc-400" />
+                        : <ArrowDown className="size-2.5 shrink-0 text-zinc-400" />
                     )}
-                  </span>
+                  </button>
                 </th>
               ))}
             </tr>

@@ -34,6 +34,7 @@ export function UndoStatus({ history, currentIndex, onUndo, onRedo, onJumpTo }: 
         <span className="text-[11px] font-medium text-zinc-600">{t('undo.history')}</span>
         <div className="flex gap-0.5">
           <button
+            aria-label={t('undo.title') === 'Undo capability' ? 'Undo' : '撤销'}
             className="rounded p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent"
             disabled={!canUndo}
             type="button"
@@ -43,6 +44,7 @@ export function UndoStatus({ history, currentIndex, onUndo, onRedo, onJumpTo }: 
             <RotateCcw className="size-3.5" />
           </button>
           <button
+            aria-label={t('undo.title') === 'Undo capability' ? 'Redo' : '重做'}
             className="rounded p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent"
             disabled={!canRedo}
             type="button"

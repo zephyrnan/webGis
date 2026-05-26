@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
+import * as Sentry from '@sentry/react';
 import type { GeoSurgicalAst } from '../types/ast';
 import type { HistoryEntry, HistoryState } from '../types/history';
 import type { GeoSurgicalMetadata } from '../types/metadata';
@@ -99,16 +100,21 @@ export function useGeoSurgicalWorker() {
       if (response.type === 'ERROR') {
         setError(response.error);
         setStatus(response.error.code === 'TASK_CANCELLED' ? 'cancelled' : 'failed');
+        if (response.error.code !== 'TASK_CANCELLED') {
+          Sentry.captureException(new Error(response.error.message), { tags: { code: response.error.code } });
+        }
       }
     };
 
     worker.onerror = (event) => {
-      setError({
+      const error = {
         code: 'WORKER_RUNTIME_ERROR',
         message: event.message ?? 'WORKER_RUNTIME_ERROR',
         recoverable: false,
-      });
+      };
+      setError(error);
       setStatus('failed');
+      Sentry.captureException(new Error(error.message), { tags: { code: error.code } });
     };
 
     worker.onmessageerror = () => {

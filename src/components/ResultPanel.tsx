@@ -125,6 +125,7 @@ export function ResultPanel({ result, history, historyIndex, onUndo, onRedo, onJ
         {url ? (
           <>
             <select
+              aria-label="Export format"
               className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[10px] text-zinc-500 outline-none transition hover:border-zinc-400 focus:border-zinc-400"
               value={exportFormat}
               onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
@@ -221,6 +222,7 @@ function QualityReportSection({ result, show, onToggle, t }: { result: SurgeryRe
   return (
     <div className="space-y-1.5">
       <button
+        aria-expanded={show}
         className="flex w-full items-center justify-between text-[10px] text-zinc-400 hover:text-zinc-600 transition"
         type="button"
         onClick={onToggle}

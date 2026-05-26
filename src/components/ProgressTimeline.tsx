@@ -10,7 +10,7 @@ export function ProgressTimeline({ items }: ProgressTimelineProps) {
   const { t } = useI18n();
 
   return (
-    <section className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+    <section aria-live="polite" aria-label={t('progress.title')} className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
       <h2 className="text-xs font-medium text-zinc-600">{t('progress.title')}</h2>
       <div className="mt-2 space-y-1.5">
         {items.length === 0 ? (

@@ -98,6 +98,7 @@ export function HistoryPanel({ onLoadSession }: HistoryPanelProps) {
             </div>
             <div className="flex shrink-0 gap-0.5 opacity-0 transition group-hover:opacity-100">
               <button
+                aria-label={t('history.restore')}
                 className="rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700"
                 type="button"
                 title={t('history.restore')}
@@ -106,6 +107,7 @@ export function HistoryPanel({ onLoadSession }: HistoryPanelProps) {
                 <RotateCcw className="size-3" />
               </button>
               <button
+                aria-label={t('history.delete')}
                 className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500"
                 type="button"
                 title={t('history.delete')}

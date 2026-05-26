@@ -20,6 +20,8 @@ export function LayerItem({ layer, isSelected, onSelect, onToggleVisibility, onT
         }`}
       >
         <button
+          aria-expanded={layer.isExpanded}
+          aria-label={`${layer.isExpanded ? 'Collapse' : 'Expand'} ${layer.name}`}
           className="shrink-0 p-0.5 text-zinc-400 hover:text-zinc-700 transition"
           type="button"
           onClick={(e) => {
@@ -31,6 +33,8 @@ export function LayerItem({ layer, isSelected, onSelect, onToggleVisibility, onT
         </button>
 
         <button
+          aria-label={`${layer.isVisible ? 'Hide' : 'Show'} ${layer.name}`}
+          aria-pressed={layer.isVisible}
           className="shrink-0 p-0.5 text-zinc-400 hover:text-zinc-700 transition"
           type="button"
           onClick={(e) => {
@@ -42,6 +46,7 @@ export function LayerItem({ layer, isSelected, onSelect, onToggleVisibility, onT
         </button>
 
         <button
+          aria-current={isSelected ? 'true' : undefined}
           className="flex-1 min-w-0 text-left truncate"
           type="button"
           onClick={() => onSelect(layer.name)}
