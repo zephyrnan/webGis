@@ -28,6 +28,8 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
   const popupRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const resultLayerRef = useRef<VectorLayer<VectorSource> | WebGLVectorLayer | null>(null);
+  const selectRef = useRef<Select | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
   const originalLayerRef = useRef<VectorLayer<VectorSource> | WebGLVectorLayer | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
   const [originalOpacity, setOriginalOpacity] = useState(0.6);
@@ -48,10 +50,13 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
     return () => {
       map.setTarget(undefined);
       mapRef.current = null;
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
     };
   }, []);
 
-  // Setup select interaction + overlay popup
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !popupRef.current) return;
@@ -88,10 +93,23 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
     };
   }, []);
 
-  // Update result layer
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+
+    // Always clean up previous Select interaction, regardless of which path we take
+    const prevSelect = selectRef.current;
+    if (prevSelect) {
+      map.removeInteraction(prevSelect);
+      selectRef.current = null;
+    }
+
+    // Revoke previous blobUrl if any
+    const prevBlobUrl = blobUrlRef.current;
+    if (prevBlobUrl) {
+      URL.revokeObjectURL(prevBlobUrl);
+      blobUrlRef.current = null;
+    }
 
     if (resultLayerRef.current) {
       map.removeLayer(resultLayerRef.current);
@@ -100,7 +118,6 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
 
     if (result?.kind !== 'geojson' && result?.kind !== 'shapefile') return;
 
-    // Convex hull preview layer (blue dashed outline — lightweight for 794k features)
     if (result.previewContent) {
       const previewSource = new VectorSource({
         features: new GeoJSON().readFeatures(result.previewContent, {
@@ -128,13 +145,12 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
     let source: VectorSource;
 
     if (result.blobUrl) {
-      // Real WASM: Blob URL 直传 OL，由内部 Loader 异步拉取解析，不阻塞主线程
       source = new VectorSource({
         url: result.blobUrl,
         format: new GeoJSON({ dataProjection: 'EPSG:4326' }),
       });
+      blobUrlRef.current = result.blobUrl;
     } else if (result.content) {
-      // Mock 模式：content 已是解析好的 GeoJSON 对象
       source = new VectorSource({
         features: new GeoJSON().readFeatures(result.content, {
           dataProjection: 'EPSG:4326',
@@ -151,30 +167,23 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       layer = new WebGLVectorLayer({
         source,
         style: {
-          'stroke-color': '#22d3ee',
+          'stroke-color': '#2563eb',
           'stroke-width': 2,
-          'fill-color': 'rgba(34, 211, 238, 0.2)',
+          'fill-color': 'rgba(37, 99, 235, 0.15)',
         },
       });
     } else {
       layer = new VectorLayer({
         source,
         style: new Style({
-          stroke: new Stroke({ color: '#22d3ee', width: 2 }),
-          fill: new Fill({ color: 'rgba(34, 211, 238, 0.2)' }),
+          stroke: new Stroke({ color: '#2563eb', width: 2 }),
+          fill: new Fill({ color: 'rgba(37, 99, 235, 0.15)' }),
         }),
       });
     }
 
     map.addLayer(layer);
     resultLayerRef.current = layer;
-
-    // Re-create select interaction targeting the new layer
-    map.getInteractions().getArray().forEach((interaction) => {
-      if (interaction instanceof Select) {
-        map.removeInteraction(interaction);
-      }
-    });
 
     const popupOverlay = map.getOverlays().getArray()[0];
     const newSelect = new Select({ condition: click, layers: [layer] });
@@ -195,8 +204,8 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       }
     });
     map.addInteraction(newSelect);
+    selectRef.current = newSelect;
 
-    // URL 模式下 features 异步加载，需监听 loadend 后再 fit
     const fitExtent = () => {
       const extent = source.getExtent();
       if (extent && extent.every(Number.isFinite)) {
@@ -211,7 +220,6 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
     }
   }, [result, useWebGL]);
 
-  // Update original layer (for comparison)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -257,7 +265,6 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
   }, [showOriginal, originalGeoJson, useWebGL, originalOpacity]);
 
   const geoJsonContent = result?.kind === 'geojson' ? result.content : null;
-  // blobUrl/previewContent 模式从 summary 取数量，content 模式直接数 features
   const featureCount = (result?.kind === 'geojson' || result?.kind === 'shapefile')
     ? ((result.blobUrl || result.previewContent)
       ? (result.summary.outputFeatureCount ?? 0)
@@ -275,39 +282,39 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
   }, []);
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70">
-      <div className="flex items-center justify-between border-b border-slate-800 p-5">
+    <section className="h-full flex flex-col overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50">
+      <div className="shrink-0 flex items-center justify-between border-b border-zinc-200 px-3 py-2">
         <div>
-          <h2 className="text-lg font-semibold text-white">{t('map.title')}</h2>
+          <h2 className="text-xs font-medium text-zinc-600">{t('map.title')}</h2>
           {(result?.kind === 'geojson' || result?.kind === 'shapefile') && featureCount > 0 && (
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="text-[10px] text-zinc-400">
               {featureCount.toLocaleString()} features
-              {featureCount > 10000 && ' (WebGL rendering)'}
+              {featureCount > 10000 && ' (WebGL)'}
             </p>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
           {geoJsonContent && featureCount > 0 && (
             <button
-              className={`rounded-full px-3 py-1 text-xs transition ${
+              className={`rounded-md px-2 py-0.5 text-[10px] transition ${
                 showTable
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                  : 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200'
+                  ? 'bg-zinc-200 text-zinc-800 border border-zinc-300'
+                  : 'bg-zinc-100 text-zinc-500 border border-zinc-200 hover:text-zinc-700'
               }`}
               type="button"
               onClick={() => setShowTable(!showTable)}
             >
-              <Table2 className="mr-1 inline-block size-3" />
+              <Table2 className="mr-1 inline-block size-2.5" />
               {t('map.showTable')}
             </button>
           )}
           {originalGeoJson && (
             <>
               <button
-                className={`rounded-full px-3 py-1 text-xs transition ${
+                className={`rounded-md px-2 py-0.5 text-[10px] transition ${
                   showOriginal
-                    ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
-                    : 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200'
+                    ? 'bg-orange-50 text-orange-700 border border-orange-300'
+                    : 'bg-zinc-100 text-zinc-500 border border-zinc-200 hover:text-zinc-700'
                 }`}
                 type="button"
                 onClick={() => setShowOriginal(!showOriginal)}
@@ -315,8 +322,8 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
                 {showOriginal ? t('map.hideOriginal') : t('map.showOriginal')}
               </button>
               {showOriginal && (
-                <div className="flex items-center gap-1.5">
-                  <Layers className="size-3 text-slate-500" />
+                <div className="flex items-center gap-1">
+                  <Layers className="size-2.5 text-zinc-400" />
                   <input
                     type="range"
                     min={0}
@@ -324,19 +331,19 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
                     step={0.05}
                     value={originalOpacity}
                     onChange={(e) => setOriginalOpacity(parseFloat(e.target.value))}
-                    className="w-16 accent-orange-400"
+                    className="w-14 accent-orange-400"
                     title={t('map.opacity')}
                   />
-                  <span className="text-[10px] text-slate-500 w-7">{Math.round(originalOpacity * 100)}%</span>
+                  <span className="text-[9px] text-zinc-400 w-6">{Math.round(originalOpacity * 100)}%</span>
                 </div>
               )}
             </>
           )}
           <button
-            className={`rounded-full px-3 py-1 text-xs transition ${
+            className={`rounded-md px-2 py-0.5 text-[10px] transition ${
               useWebGL
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                : 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200'
+                ? 'bg-zinc-200 text-zinc-800 border border-zinc-300'
+                : 'bg-zinc-100 text-zinc-500 border border-zinc-200 hover:text-zinc-700'
             }`}
             type="button"
             onClick={() => setUseWebGL(!useWebGL)}
@@ -345,32 +352,31 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
           </button>
         </div>
       </div>
-      {result?.kind === 'summary' ? <p className="border-b border-slate-800 p-5 text-sm text-amber-200">{t(`warning.${result.warnings[0]}`) === `warning.${result.warnings[0]}` ? result.warnings[0] : t(`warning.${result.warnings[0]}`)}</p> : null}
-      <div className="relative">
-        <div ref={targetRef} className="h-[420px] bg-slate-950" />
-        {/* Feature popup overlay */}
+      {result?.kind === 'summary' ? <p className="shrink-0 border-b border-zinc-200 px-3 py-2 text-[11px] text-amber-600">{t(`warning.${result.warnings[0]}`) === `warning.${result.warnings[0]}` ? result.warnings[0] : t(`warning.${result.warnings[0]}`)}</p> : null}
+      <div className="relative flex-1 min-h-0">
+        <div ref={targetRef} className="absolute inset-0" />
         <div
           ref={popupRef}
           className="absolute pointer-events-none"
           style={{ display: selectedProps ? 'block' : 'none' }}
         >
           {selectedProps && (
-            <div className="pointer-events-auto mb-2 w-64 rounded-xl border border-slate-700 bg-slate-900/95 p-3 text-xs shadow-xl shadow-black/50 backdrop-blur">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="font-medium text-cyan-300">{t('map.featurePopup')}</span>
+            <div className="pointer-events-auto mb-2 w-56 rounded-lg border border-zinc-200 bg-white p-2.5 text-[10px] shadow-lg shadow-zinc-200/50">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="font-medium text-zinc-700">{t('map.featurePopup')}</span>
                 <button
-                  className="rounded p-0.5 text-slate-500 hover:text-white"
+                  className="rounded p-0.5 text-zinc-400 hover:text-zinc-700"
                   type="button"
                   onClick={closePopup}
                 >
                   &times;
                 </button>
               </div>
-              <div className="max-h-48 space-y-1 overflow-auto">
+              <div className="max-h-40 space-y-0.5 overflow-y-auto">
                 {Object.entries(selectedProps).map(([key, value]) => (
                   <div key={key} className="flex gap-2">
-                    <span className="shrink-0 text-slate-500">{key}</span>
-                    <span className="truncate text-slate-200">{value == null ? 'null' : String(value)}</span>
+                    <span className="shrink-0 text-zinc-400">{key}</span>
+                    <span className="truncate text-zinc-700">{value == null ? 'null' : String(value)}</span>
                   </div>
                 ))}
               </div>

@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [116.397, 39.908] },
+      "properties": { "name": "Beijing", "area": 16410 }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [121.474, 31.230] },
+      "properties": { "name": "Shanghai", "area": 6340 }
+    }
+  ]
+}

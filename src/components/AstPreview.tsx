@@ -12,24 +12,24 @@ export function AstPreview({ ast, risks }: AstPreviewProps) {
 
   if (!ast) {
     return (
-      <section className="flex items-center gap-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-500">
-        <Code className="size-5 shrink-0 text-slate-600" />
+      <section className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-400">
+        <Code className="size-4 shrink-0" />
         {t('ast.empty')}
       </section>
     );
   }
 
   return (
-    <section className="animate-fade-in space-y-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
+    <section className="animate-fade-in space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-white">{t('ast.title')}</h2>
-        <span className="rounded-full bg-cyan-950 px-2 py-1 text-xs text-cyan-200">v{ast.version}</span>
+        <h2 className="text-xs font-medium text-zinc-600">{t('ast.title')}</h2>
+        <span className="rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">v{ast.version}</span>
       </div>
-      <pre className="max-h-72 overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-200">
+      <pre className="max-h-60 overflow-auto rounded-md bg-zinc-100 p-3 text-[11px] leading-relaxed text-zinc-600 font-mono">
         {JSON.stringify(ast, null, 2)}
       </pre>
       {risks.length ? (
-        <div className="space-y-1 rounded-2xl border border-amber-400/30 bg-amber-950/30 p-3 text-sm text-amber-100">
+        <div className="space-y-0.5 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-700">
           {risks.map((risk) => <p key={risk}>{t(risk)}</p>)}
         </div>
       ) : null}

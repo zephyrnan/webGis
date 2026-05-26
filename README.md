@@ -35,7 +35,10 @@ GeoSurgical is a language-driven spatial-data workbench. Users upload GIS files,
 
 ```text
 React UI thread
-  Dropzone / Metadata / Command Palette / AST Preview / Map / Result Panel
+  h-screen three-column dashboard (grid-cols-12)
+  Left (3-col): Dropzone / Layer Tree / Batch
+  Center (5-col): OpenLayers Map Canvas
+  Right (4-col): Command Palette / AST Preview / History / Result
         |
         | Transferable ArrayBuffer + AST messages
         v
@@ -181,13 +184,13 @@ wasm-pack build --target web --release
 
 Latest validation status is tracked in `ACCEPTANCE.md`.
 
-Verified on 2026-05-24:
+Verified on 2026-05-25:
 
 - `npm test` — passed, 45 tests.
 - `npm run typecheck` — passed.
-- `npm run generate:types` — passed.
-- `cargo check --manifest-path src-wasm/Cargo.toml` — passed with non-blocking warnings.
-- `npm run build` — passed with a non-blocking chunk-size warning.
+- `npm run build` — passed.
+- Three-column dashboard layout verified (no global scrollbar, local scrolling).
+- Vercel dark theme applied to all components.
 
 Manual browser verification is still recommended for representative GeoJSON and ZIP Shapefile samples before production use.
 

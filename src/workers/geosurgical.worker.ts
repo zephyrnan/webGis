@@ -104,6 +104,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 };
 
 async function handleUpload(request: Extract<WorkerRequest, { type: 'UPLOAD_FILE' }>) {
+  // Clean up old task contexts to free ArrayBuffer memory
+  for (const key of taskContexts.keys()) {
+    if (key !== request.taskId) taskContexts.delete(key);
+  }
+
   taskContexts.set(request.taskId, {
     taskId: request.taskId,
     fileName: request.fileName,
@@ -138,8 +143,8 @@ async function handleUpload(request: Extract<WorkerRequest, { type: 'UPLOAD_FILE
     metadata.warnings.push({
       code: 'WASM_MOCK_MODE',
       message: wasmLoadError
-        ? `WASM 加载失败（${wasmLoadError}），已回退至 Mock 模式。`
-        : '当前使用 TypeScript Mock WASM 提取元数据，真实 Rust WASM 尚未接入。',
+        ? `WASM_LOAD_FAILED: ${wasmLoadError}`
+        : 'WASM_MOCK_MODE',
       recoverable: true,
     });
   }
@@ -254,18 +259,19 @@ function post(response: WorkerResponse) {
 }
 
 function toStructuredError(error: unknown) {
-  const message = error instanceof Error ? error.message : '未知 Worker 错误。';
+  const message = error instanceof Error ? error.message : 'UNKNOWN_WORKER_ERROR';
 
-  if (message === 'TASK_CANCELLED') {
-    return { code: 'TASK_CANCELLED', message: '任务已取消。', recoverable: true };
-  }
+  const knownErrors: Record<string, { recoverable: boolean }> = {
+    TASK_CANCELLED: { recoverable: true },
+    METADATA_NOT_READY: { recoverable: true },
+    TASK_NOT_FOUND: { recoverable: true },
+    LAYER_NOT_FOUND: { recoverable: true },
+    NO_LAYERS_AVAILABLE: { recoverable: true },
+  };
 
-  if (message === 'METADATA_NOT_READY') {
-    return { code: 'METADATA_NOT_READY', message: '请等待 Metadata 分诊完成后再执行。', recoverable: true };
-  }
-
-  if (message === 'TASK_NOT_FOUND') {
-    return { code: 'TASK_NOT_FOUND', message: '未找到任务上下文，请重新上传文件。', recoverable: true };
+  const known = knownErrors[message];
+  if (known) {
+    return { code: message, message, recoverable: known.recoverable };
   }
 
   return {

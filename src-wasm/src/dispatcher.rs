@@ -4,6 +4,7 @@ use js_sys::Function;
 use wasm_bindgen::JsError;
 use zip::ZipArchive;
 use geo::Simplify;
+use geo::SimplifyVwPreserve;
 use crate::types::*;
 
 pub fn execute(
@@ -33,7 +34,7 @@ pub fn execute(
     for (i, op) in ast.operations.iter().enumerate() {
         let progress = 15 + ((i as f64 / total_ops as f64) * 70.0) as u32;
         let op_name = operation_name(op);
-        emit_progress(progress_callback, "executing", &format!("正在执行: {}", op_name), progress);
+        emit_progress(progress_callback, "executing", &format!("operation:{}", op_name), progress);
 
         match op {
             Operation::FilterArea { field, operator, value } => {
@@ -43,7 +44,7 @@ pub fn execute(
                     compare_numeric(prop_val, operator, *value)
                 });
                 let removed = before - fc.features.len();
-                logs.push(format!("operation:filter_area (移除了 {} 个要素)", removed));
+                logs.push(format!("operation:filter_area|removed={}", removed));
             }
             Operation::DropEmpty { field } => {
                 let before = fc.features.len();
@@ -56,7 +57,7 @@ pub fn execute(
                     }
                 });
                 let removed = before - fc.features.len();
-                logs.push(format!("operation:drop_empty (移除了 {} 个要素)", removed));
+                logs.push(format!("operation:drop_empty|removed={}", removed));
             }
             Operation::RenameField { from, to } => {
                 for feature in &mut fc.features {
@@ -71,16 +72,16 @@ pub fn execute(
             Operation::TransformCrs { from, to } => {
                 if to == "GCJ-02" && from == "EPSG:4326" {
                     apply_gcj02_transform(&mut fc);
-                    logs.push("operation:transform_crs (WGS-84 → GCJ-02)".to_string());
+                    logs.push("operation:transform_crs|from=WGS-84|to=GCJ-02".to_string());
                 } else if to == "EPSG:3857" && from == "EPSG:4326" {
                     apply_wgs84_to_mercator(&mut fc);
-                    logs.push("operation:transform_crs (WGS-84 → Web Mercator)".to_string());
+                    logs.push("operation:transform_crs|from=WGS-84|to=Web Mercator".to_string());
                 } else if to == "EPSG:4326" && from == "GCJ-02" {
                     apply_gcj02_to_wgs84(&mut fc);
-                    logs.push("operation:transform_crs (GCJ-02 → WGS-84)".to_string());
+                    logs.push("operation:transform_crs|from=GCJ-02|to=WGS-84".to_string());
                 } else {
                     warnings.push(format!("UNSUPPORTED_CRS_TRANSFORM: {} -> {}", from, to));
-                    logs.push(format!("operation:transform_crs (跳过: {} -> {})", from, to));
+                    logs.push(format!("operation:transform_crs|skipped=true|from={}|to={}", from, to));
                 }
             }
             Operation::FixEncoding { from, to } => {
@@ -112,7 +113,8 @@ pub fn execute(
                     }
                 }
             }
-            Operation::Simplify { tolerance, preserve_topology: _ } => {
+            Operation::Simplify { tolerance, preserve_topology } => {
+                let preserve = preserve_topology.unwrap_or(true);
                 let mut simplified_count = 0u32;
                 let mut total_before = 0usize;
                 let mut total_after = 0usize;
@@ -121,7 +123,7 @@ pub fn execute(
                     if let Some(ref mut geom) = feature.geometry {
                         let before = count_geojson_coords(geom);
                         total_before += before;
-                        if let Some(simplified) = simplify_geojson_geometry(geom, *tolerance) {
+                        if let Some(simplified) = simplify_geojson_geometry(geom, *tolerance, preserve) {
                             let after = count_geojson_coords(&simplified);
                             total_after += after;
                             simplified_count += 1;
@@ -133,11 +135,15 @@ pub fn execute(
                 }
 
                 logs.push(format!(
-                    "operation:simplify (tolerance={}, {} geometries, vertices {} → {})",
+                    "operation:simplify|tolerance={}|geometries={}|verticesBefore={}|verticesAfter={}",
                     tolerance, simplified_count, total_before, total_after
                 ));
             }
             Operation::FieldCalculate { target_field, operation, operands } => {
+                if operands.len() < 2 {
+                    warnings.push("FIELD_CALCULATE_REQUIRES_2_OPERANDS".to_string());
+                    continue;
+                }
                 let mut calculated = 0u32;
                 let mut errors = 0u32;
 
@@ -168,8 +174,8 @@ pub fn execute(
                 }
 
                 logs.push(format!(
-                    "operation:field_calculate ({} = {} {} {}, calculated: {}, errors: {})",
-                    target_field, operands[0], operation, operands[1], calculated, errors
+                    "operation:field_calculate|target={}|op={}|calculated={}|errors={}",
+                    target_field, operation, calculated, errors
                 ));
                 if errors > 0 {
                     warnings.push(format!("FIELD_CALCULATE_ERRORS: {} features had missing/invalid operands", errors));
@@ -194,7 +200,7 @@ pub fn execute(
                 }
 
                 logs.push(format!(
-                    "operation:validate_geometry (mode={}, invalid: {}, fixed: {})",
+                    "operation:validate_geometry|mode={}|invalid={}|fixed={}",
                     mode, invalid_count, fixed_count
                 ));
                 if invalid_count > 0 && mode == "check" {
@@ -213,7 +219,7 @@ pub fn execute(
                     }
                 }
                 logs.push(format!(
-                    "operation:buffer (distance={}, segments={}, geometries: {})",
+                    "operation:buffer|distance={}|segments={}|geometries={}",
                     distance, segs, buffered_count
                 ));
             }
@@ -228,7 +234,7 @@ pub fn execute(
                 });
                 let removed = before - fc.features.len();
                 logs.push(format!(
-                    "operation:clip (bbox=[{},{},{},{}], removed {} features)",
+                    "operation:clip|bbox={},{},{},{}|removed={}",
                     bbox[0], bbox[1], bbox[2], bbox[3], removed
                 ));
             }
@@ -243,7 +249,7 @@ pub fn execute(
                 });
                 let removed = before - fc.features.len();
                 logs.push(format!(
-                    "operation:intersect (bbox=[{},{},{},{}], kept {}, removed {})",
+                    "operation:intersect|bbox={},{},{},{}|kept={}|removed={}",
                     bbox[0], bbox[1], bbox[2], bbox[3], fc.features.len(), removed
                 ));
             }
@@ -252,19 +258,19 @@ pub fn execute(
                 fc.features = dissolve_by_field(&fc, field);
                 let after = fc.features.len();
                 logs.push(format!(
-                    "operation:dissolve (field={}, {} → {} features)",
+                    "operation:dissolve|field={}|before={}|after={}",
                     field, before, after
                 ));
             }
             Operation::Export { format } => {
                 export_format = format.as_str();
-                logs.push(format!("operation:export ({})", format));
+                logs.push(format!("operation:export|format={}", format));
             }
             Operation::Noop { reason } => {
-                logs.push(format!("operation:noop ({})", reason));
+                logs.push(format!("operation:noop|reason={}", reason));
             }
             Operation::NeedClarification { reason } => {
-                logs.push(format!("operation:need_clarification ({})", reason));
+                logs.push(format!("operation:need_clarification|reason={}", reason));
                 warnings.push(format!("NEED_CLARIFICATION: {}", reason));
             }
         }
@@ -387,7 +393,8 @@ fn stream_export_zip(
     let shp_data = shp_bytes.ok_or_else(|| JsError::new("ZIP 中未找到 .shp 文件"))?;
     let mut properties: Vec<serde_json::Map<String, serde_json::Value>> = dbf_bytes.map(|d| parse_dbf_records_lossy(&d)).unwrap_or_default();
 
-    emit_progress(progress_callback, "executing", "正在流式导出 GeoJSON...", 20);
+    let total_estimate = properties.len().max(1);
+    emit_progress(progress_callback, "executing", "streamExport.start", 10);
 
     // Stream-process: read each shape, serialize to JSON, write to buffer
     let mut reader = shapefile::ShapeReader::new(Cursor::new(&shp_data))
@@ -430,13 +437,14 @@ fn stream_export_zip(
 
         count += 1;
         if count % 10000 == 0 {
-            emit_progress(progress_callback, "executing", &format!("已导出 {} 个要素...", count), 20);
+            let percent = (10 + (count * 80 / total_estimate)).min(90) as u32;
+            emit_progress(progress_callback, "executing", &format!("streamExport.progress|count={}", count), percent);
         }
     }
 
     geojson_buf.extend_from_slice(b"]}");
 
-    emit_progress(progress_callback, "exporting", "结果已生成，准备回传主线程。", 100);
+    emit_progress(progress_callback, "exporting", "streamExport.done", 100);
 
     // Only compute convex hull preview when dataset is large enough to block the main thread.
     const PREVIEW_HULL_THRESHOLD: usize = 50_000;
@@ -459,7 +467,7 @@ fn stream_export_zip(
                 operations: vec!["export".to_string()],
                 mock_mode: false,
             },
-            logs: vec![format!("operation:export (geojson)")],
+            logs: vec![format!("operation:export|format=geojson")],
             warnings: vec!["WASM_REAL_MODE".to_string()],
         },
         undo: UndoCapability {
@@ -776,7 +784,7 @@ fn compare_numeric(left: f64, operator: &str, right: f64) -> bool {
         ">" => left > right,
         "<=" => left <= right,
         "<" => left < right,
-        "=" => (left - right).abs() < f64::EPSILON,
+        "=" => (left - right).abs() <= f64::EPSILON * left.abs().max(right.abs()).max(1.0),
         _ => false,
     }
 }
@@ -868,6 +876,7 @@ fn transform_lng(x: f64, y: f64) -> f64 {
 // --- WGS-84 (EPSG:4326) → Web Mercator (EPSG:3857) ---
 
 fn wgs84_to_mercator(lat: f64, lng: f64) -> (f64, f64) {
+    let lat = lat.clamp(-85.05112878, 85.05112878);
     let x = lng * 20037508.34 / 180.0;
     let y = ((90.0 + lat) * std::f64::consts::PI / 360.0).tan().ln() / std::f64::consts::PI * 20037508.34;
     (x, y)
@@ -1402,7 +1411,9 @@ fn write_shapefile_zip(fc: &geojson::FeatureCollection) -> Result<Vec<u8>, JsErr
 
 fn write_shp<W: Write>(writer: &mut W, shapes: &[shapefile::Shape]) -> Result<(), JsError> {
     let file_length_words = compute_shp_file_length_words(shapes);
-    write_shp_header(writer, file_length_words)?;
+    let shape_type = shapes.first().map(shape_type_code).unwrap_or(0);
+    let bbox = compute_shapes_bbox(shapes);
+    write_shp_header(writer, file_length_words, shape_type, bbox)?;
     for (i, shape) in shapes.iter().enumerate() {
         let content_len = shape_content_length_words(shape) as u32;
         writer.write_all(&(i as i32 + 1).to_be_bytes())
@@ -1416,7 +1427,9 @@ fn write_shp<W: Write>(writer: &mut W, shapes: &[shapefile::Shape]) -> Result<()
 
 fn write_shx<W: Write>(writer: &mut W, shapes: &[shapefile::Shape]) -> Result<(), JsError> {
     let file_length_words = 50 + (shapes.len() as u32) * 4;
-    write_shp_header(writer, file_length_words)?;
+    let shape_type = shapes.first().map(shape_type_code).unwrap_or(0);
+    let bbox = compute_shapes_bbox(shapes);
+    write_shp_header(writer, file_length_words, shape_type, bbox)?;
     let mut offset_words: u32 = 50;
     for shape in shapes {
         let content_len = shape_content_length_words(shape) as u32;
@@ -1429,68 +1442,106 @@ fn write_shx<W: Write>(writer: &mut W, shapes: &[shapefile::Shape]) -> Result<()
     Ok(())
 }
 
-fn write_shp_header<W: Write>(writer: &mut W, file_length_words: u32) -> Result<(), JsError> {
+fn write_shp_header<W: Write>(writer: &mut W, file_length_words: u32, shape_type: i32, bbox: [f64; 4]) -> Result<(), JsError> {
     writer.write_all(&9994_i32.to_be_bytes()).map_err(|e| JsError::new(&format!("SHP header write failed: {}", e)))?;
     writer.write_all(&[0u8; 20]).map_err(|e| JsError::new(&format!("SHP header write failed: {}", e)))?;
     writer.write_all(&file_length_words.to_be_bytes()).map_err(|e| JsError::new(&format!("SHP header write failed: {}", e)))?;
     writer.write_all(&1000_i32.to_le_bytes()).map_err(|e| JsError::new(&format!("SHP header write failed: {}", e)))?;
-    let shape_type = 5_i32; // Polygon
     writer.write_all(&shape_type.to_le_bytes()).map_err(|e| JsError::new(&format!("SHP header write failed: {}", e)))?;
-    // BBox + Z/M range (8 doubles = 64 bytes)
-    writer.write_all(&[0u8; 64]).map_err(|e| JsError::new(&format!("SHP header write failed: {}", e)))?;
+    // BBox (4 doubles = 32 bytes)
+    for v in &bbox {
+        writer.write_all(&v.to_le_bytes()).map_err(|e| JsError::new(&format!("SHP header write failed: {}", e)))?;
+    }
+    // Z range + M range (4 doubles = 32 bytes, all zeros)
+    writer.write_all(&[0u8; 32]).map_err(|e| JsError::new(&format!("SHP header write failed: {}", e)))?;
     Ok(())
+}
+
+fn compute_shapes_bbox(shapes: &[shapefile::Shape]) -> [f64; 4] {
+    let (mut min_x, mut min_y) = (f64::MAX, f64::MAX);
+    let (mut max_x, mut max_y) = (f64::MIN, f64::MIN);
+    for shape in shapes {
+        let coords: Vec<(f64, f64)> = match shape {
+            shapefile::Shape::Point(p) => vec![(p.x, p.y)],
+            shapefile::Shape::PointM(p) => vec![(p.x, p.y)],
+            shapefile::Shape::PointZ(p) => vec![(p.x, p.y)],
+            shapefile::Shape::Multipoint(pts) => pts.points().iter().map(|p| (p.x, p.y)).collect(),
+            shapefile::Shape::MultipointM(pts) => pts.points().iter().map(|p| (p.x, p.y)).collect(),
+            shapefile::Shape::MultipointZ(pts) => pts.points().iter().map(|p| (p.x, p.y)).collect(),
+            shapefile::Shape::Polyline(line) => line.parts().iter().flat_map(|p| p.iter().map(|pt| (pt.x, pt.y))).collect(),
+            shapefile::Shape::PolylineM(line) => line.parts().iter().flat_map(|p| p.iter().map(|pt| (pt.x, pt.y))).collect(),
+            shapefile::Shape::PolylineZ(line) => line.parts().iter().flat_map(|p| p.iter().map(|pt| (pt.x, pt.y))).collect(),
+            shapefile::Shape::Polygon(poly) => poly.rings().iter().flat_map(|r| match r {
+                shapefile::PolygonRing::Outer(p) | shapefile::PolygonRing::Inner(p) => p.iter().map(|pt| (pt.x, pt.y)).collect::<Vec<_>>(),
+            }).collect(),
+            shapefile::Shape::PolygonM(poly) => poly.rings().iter().flat_map(|r| match r {
+                shapefile::PolygonRing::Outer(p) | shapefile::PolygonRing::Inner(p) => p.iter().map(|pt| (pt.x, pt.y)).collect::<Vec<_>>(),
+            }).collect(),
+            shapefile::Shape::PolygonZ(poly) => poly.rings().iter().flat_map(|r| match r {
+                shapefile::PolygonRing::Outer(p) | shapefile::PolygonRing::Inner(p) => p.iter().map(|pt| (pt.x, pt.y)).collect::<Vec<_>>(),
+            }).collect(),
+            _ => vec![],
+        };
+        for (x, y) in coords {
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+    }
+    if min_x == f64::MAX { [0.0, 0.0, 0.0, 0.0] } else { [min_x, min_y, max_x, max_y] }
+}
+
+fn shape_type_code(shape: &shapefile::Shape) -> i32 {
+    match shape {
+        shapefile::Shape::NullShape => 0,
+        shapefile::Shape::Point(_) => 1,
+        shapefile::Shape::Polyline(_) => 3,
+        shapefile::Shape::Polygon(_) => 5,
+        shapefile::Shape::Multipoint(_) => 8,
+        shapefile::Shape::PointZ(_) => 11,
+        shapefile::Shape::PolylineZ(_) => 13,
+        shapefile::Shape::PolygonZ(_) => 15,
+        shapefile::Shape::PointM(_) => 21,
+        shapefile::Shape::PolylineM(_) => 23,
+        shapefile::Shape::PolygonM(_) => 25,
+        shapefile::Shape::MultipointM(_) => 28,
+        shapefile::Shape::MultipointZ(_) => 31,
+        shapefile::Shape::Multipatch(_) => 31,
+    }
 }
 
 fn shape_content_length_words(shape: &shapefile::Shape) -> usize {
     match shape {
-        shapefile::Shape::NullShape => 2, // type(4) + padding(0)
-        shapefile::Shape::Point(_) => 10, // type(4) + x(8) + y(8) = 20 bytes = 10 words
-        shapefile::Shape::PointM(_) => 14, // type(4) + x(8) + y(8) + m(8) = 28 = 14 words
-        shapefile::Shape::PointZ(_) => 14, // type(4) + x(8) + y(8) + z(8) = 28 = 14 words
+        shapefile::Shape::NullShape => 2,
+        shapefile::Shape::Point(_) => 10, // type(4) + x(8) + y(8) = 20B = 10w
+        shapefile::Shape::PointM(_) => 14, // type(4) + x(8) + y(8) + m(8) = 28B = 14w
+        shapefile::Shape::PointZ(_) => 18, // type(4) + x(8) + y(8) + z(8) + m(8) = 36B = 18w
         shapefile::Shape::Multipoint(pts) => {
-            12 + pts.points().len() * 4 // type(4)+bbox(32)+numpoints(4)+points(n*16)
+            let n = pts.points().len();
+            20 + n * 8 // type(4)+bbox(32)+numpoints(4)+points(n*16) = 40+n*16 B = 20+n*8 w
         }
-        shapefile::Shape::MultipointM(pts) => {
-            14 + pts.points().len() * 4 + 8 // + m_range(16) + m_values
-        }
-        shapefile::Shape::MultipointZ(pts) => {
-            14 + pts.points().len() * 4 + 8 + pts.points().len() * 4 + 8
-        }
+        shapefile::Shape::MultipointM(_) | shapefile::Shape::MultipointZ(_) => 2, // fallback
         shapefile::Shape::Polyline(line) => {
             let num_parts = line.parts().len();
             let num_points: usize = line.parts().iter().map(|p| p.len()).sum();
-            12 + num_parts * 2 + num_points * 4
+            22 + num_parts * 2 + num_points * 8
         }
-        shapefile::Shape::PolylineM(line) => {
-            let num_parts = line.parts().len();
-            let num_points: usize = line.parts().iter().map(|p| p.len()).sum();
-            14 + num_parts * 2 + num_points * 4 + 8 + num_points * 4 + 8
-        }
-        shapefile::Shape::PolylineZ(line) => {
-            let num_parts = line.parts().len();
-            let num_points: usize = line.parts().iter().map(|p| p.len()).sum();
-            14 + num_parts * 2 + num_points * 4 + 8 + num_points * 4 + 8 + num_points * 4 + 8
-        }
+        shapefile::Shape::PolylineM(_) | shapefile::Shape::PolylineZ(_) => 2, // fallback
         shapefile::Shape::Polygon(poly) => {
             let num_parts = poly.rings().len();
             let num_points: usize = poly.rings().iter().map(|r| match r {
                 shapefile::PolygonRing::Outer(p) | shapefile::PolygonRing::Inner(p) => p.len(),
             }).sum();
-            12 + num_parts * 2 + num_points * 4
+            22 + num_parts * 2 + num_points * 8
         }
-        shapefile::Shape::PolygonM(poly) => {
-            let num_parts = poly.rings().len();
-            let num_points: usize = poly.rings().iter().map(|r| match r {
-                shapefile::PolygonRing::Outer(p) | shapefile::PolygonRing::Inner(p) => p.len(),
-            }).sum();
-            14 + num_parts * 2 + num_points * 4 + 8 + num_points * 4 + 8
-        }
+        shapefile::Shape::PolygonM(_) => 2, // fallback: write_shape_record emits NullShape
         shapefile::Shape::PolygonZ(poly) => {
             let num_parts = poly.rings().len();
             let num_points: usize = poly.rings().iter().map(|r| match r {
                 shapefile::PolygonRing::Outer(p) | shapefile::PolygonRing::Inner(p) => p.len(),
             }).sum();
-            14 + num_parts * 2 + num_points * 4 + 8 + num_points * 4 + 8 + num_points * 4 + 8
+            30 + num_parts * 2 + num_points * 12
         }
         shapefile::Shape::Multipatch(_) => 2,
     }
@@ -1532,6 +1583,7 @@ fn write_shape_record<W: Write>(writer: &mut W, shape: &shapefile::Shape) -> Res
             w!(writer, &pt.x.to_le_bytes());
             w!(writer, &pt.y.to_le_bytes());
             w!(writer, &pt.z.to_le_bytes());
+            w!(writer, &f64::NAN.to_le_bytes()); // M value required by ESRI spec
         }
         shapefile::Shape::Multipoint(pts) => {
             let points = pts.points();
@@ -1796,13 +1848,27 @@ fn build_dbf_bytes(features: &[geojson::Feature]) -> Vec<u8> {
     // Collect all unique field names from all features
     let mut field_names: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
+    let mut used_truncated = std::collections::HashSet::new();
     for feature in features {
         if let Some(ref props) = feature.properties {
             for key in props.keys() {
                 if seen.insert(key.clone()) {
-                    // DBF field name limit: 10 bytes; truncate multi-byte names safely
                     let truncated = truncate_to_bytes(key, 10);
-                    field_names.push(truncated);
+                    // Deduplicate truncated names: append _1, _2, etc.
+                    let unique = if used_truncated.contains(&truncated) {
+                        let mut suffix = 1u32;
+                        loop {
+                            let candidate = format!("{}_{}", &truncated[..truncated.len().min(7)], suffix);
+                            if !used_truncated.contains(&candidate) {
+                                break candidate;
+                            }
+                            suffix += 1;
+                        }
+                    } else {
+                        truncated.clone()
+                    };
+                    used_truncated.insert(unique.clone());
+                    field_names.push(unique);
                 }
             }
         }
@@ -1902,12 +1968,12 @@ fn fix_encoding_inplace(
 
     let log = if let Some(enc) = encoding {
         format!(
-            "operation:fix_encoding ({} → utf-8, encoding: {}, cleaned {}/{} strings, in-place fallback)",
+            "operation:fix_encoding|from={}|encoding={}|cleaned={}|total={}|fallback=true",
             from, enc.name(), cleaned_count, total_strings
         )
     } else {
         format!(
-            "operation:fix_encoding ({} → utf-8, encoding not recognized, cleaned {}/{} strings, in-place fallback)",
+            "operation:fix_encoding|from={}|encoding=unknown|cleaned={}|total={}|fallback=true",
             from, cleaned_count, total_strings
         )
     };
@@ -2000,7 +2066,7 @@ fn reencode_zip_dbf(
 
     let count = fc.features.len();
     let log = format!(
-        "operation:fix_encoding (re-encoded {} features with {})",
+        "operation:fix_encoding|reencoded={}|encoding={}",
         count, enc.name()
     );
 
@@ -2130,30 +2196,30 @@ fn count_geojson_coords(geom: &geojson::Geometry) -> usize {
     }
 }
 
-fn simplify_geojson_geometry(geom: &geojson::Geometry, tolerance: f64) -> Option<geojson::Geometry> {
+fn simplify_geojson_geometry(geom: &geojson::Geometry, tolerance: f64, preserve_topology: bool) -> Option<geojson::Geometry> {
     let simplified_value = match &geom.value {
         geojson::Value::LineString(coords) => {
             let ls = geo_linestring_from_coords(coords);
-            let simplified = ls.simplify(&tolerance);
+            let simplified = if preserve_topology { ls.simplify_vw_preserve(&tolerance) } else { ls.simplify(&tolerance) };
             Some(geojson::Value::LineString(geo_ls_to_coords(&simplified)))
         }
         geojson::Value::MultiLineString(lines) => {
             let result: Vec<Vec<Vec<f64>>> = lines.iter().map(|coords| {
                 let ls = geo_linestring_from_coords(coords);
-                let simplified = ls.simplify(&tolerance);
+                let simplified = if preserve_topology { ls.simplify_vw_preserve(&tolerance) } else { ls.simplify(&tolerance) };
                 geo_ls_to_coords(&simplified)
             }).collect();
             Some(geojson::Value::MultiLineString(result))
         }
         geojson::Value::Polygon(rings) => {
             let poly = geo_polygon_from_rings(rings)?;
-            let simplified = poly.simplify(&tolerance);
+            let simplified = if preserve_topology { poly.simplify_vw_preserve(&tolerance) } else { poly.simplify(&tolerance) };
             Some(geojson::Value::Polygon(geo_poly_to_rings(&simplified)))
         }
         geojson::Value::MultiPolygon(polys) => {
             let result: Vec<Vec<Vec<Vec<f64>>>> = polys.iter().filter_map(|rings| {
                 let poly = geo_polygon_from_rings(rings)?;
-                let simplified = poly.simplify(&tolerance);
+                let simplified = if preserve_topology { poly.simplify_vw_preserve(&tolerance) } else { poly.simplify(&tolerance) };
                 Some(geo_poly_to_rings(&simplified))
             }).collect();
             Some(geojson::Value::MultiPolygon(result))

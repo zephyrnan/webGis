@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, X } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import type GeoJSON from 'ol/format/GeoJSON';
 
-const ROW_HEIGHT = 36;
+const ROW_HEIGHT = 32;
 const BUFFER_ROWS = 10;
 
 type SortDir = 'asc' | 'desc';
@@ -22,7 +22,6 @@ export function AttributeTable({ geoJson, onClose }: AttributeTableProps) {
 
   const features = geoJson.features ?? [];
 
-  // Extract all non-geometry property keys
   const columns = useMemo(() => {
     const keys = new Set<string>();
     for (const f of features) {
@@ -35,7 +34,6 @@ export function AttributeTable({ geoJson, onClose }: AttributeTableProps) {
     return [...keys];
   }, [features]);
 
-  // Filter
   const filtered = useMemo(() => {
     if (!filter.trim()) return features;
     const lower = filter.toLowerCase();
@@ -45,7 +43,6 @@ export function AttributeTable({ geoJson, onClose }: AttributeTableProps) {
     });
   }, [features, filter]);
 
-  // Sort
   const sorted = useMemo(() => {
     if (!sortField) return filtered;
     return [...filtered].sort((a, b) => {
@@ -70,10 +67,9 @@ export function AttributeTable({ geoJson, onClose }: AttributeTableProps) {
     }
   }, [sortField]);
 
-  // Simple virtualization
   const totalHeight = sorted.length * ROW_HEIGHT;
   const [scrollTop, setScrollTop] = useState(0);
-  const containerHeight = 300;
+  const containerHeight = 260;
 
   const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
   const endIdx = Math.min(sorted.length, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + BUFFER_ROWS);
@@ -87,53 +83,53 @@ export function AttributeTable({ geoJson, onClose }: AttributeTableProps) {
   }, []);
 
   return (
-    <div className="border-t border-slate-800">
-      <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
-        <div className="flex items-center gap-3">
-          <h3 className="text-sm font-medium text-white">{t('map.attributeTable')}</h3>
-          <span className="text-xs text-slate-500">
+    <div className="shrink-0 border-t border-zinc-200">
+      <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[11px] font-medium text-zinc-600">{t('map.attributeTable')}</h3>
+          <span className="text-[10px] text-zinc-400">
             {sorted.length.toLocaleString()} {t('metadata.featureCount')}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <input
-            className="w-48 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-400"
+            className="w-40 rounded-md border border-zinc-300 bg-white px-2 py-1 text-[10px] text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-zinc-400"
             placeholder={t('map.filterTable')}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
           <button
-            className="rounded-lg p-1 text-slate-500 hover:text-white"
+            className="rounded p-0.5 text-zinc-400 hover:text-zinc-700"
             type="button"
             onClick={onClose}
           >
-            <X className="size-4" />
+            <X className="size-3.5" />
           </button>
         </div>
       </div>
 
       <div
         ref={containerRef}
-        className="overflow-auto bg-slate-950/50"
+        className="overflow-auto bg-white"
         style={{ height: Math.min(containerHeight, totalHeight + ROW_HEIGHT) }}
         onScroll={handleScroll}
       >
-        <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
-          <thead className="sticky top-0 z-10 bg-slate-900">
+        <table className="w-full text-[10px]" style={{ tableLayout: 'fixed' }}>
+          <thead className="sticky top-0 z-10 bg-zinc-50">
             <tr>
               {columns.map((col) => (
                 <th
                   key={col}
-                  className="cursor-pointer select-none border-b border-slate-700 px-3 py-2 text-left font-medium text-slate-400 hover:text-slate-200"
-                  style={{ minWidth: 80 }}
+                  className="cursor-pointer select-none border-b border-zinc-200 px-2 py-1.5 text-left font-medium text-zinc-500 hover:text-zinc-700"
+                  style={{ minWidth: 70 }}
                   onClick={() => toggleSort(col)}
                 >
                   <span className="inline-flex items-center gap-1">
                     {col}
                     {sortField === col && (
                       sortDir === 'asc'
-                        ? <ArrowUp className="size-3 text-cyan-400" />
-                        : <ArrowDown className="size-3 text-cyan-400" />
+                        ? <ArrowUp className="size-2.5 text-zinc-400" />
+                        : <ArrowDown className="size-2.5 text-zinc-400" />
                     )}
                   </span>
                 </th>
@@ -145,11 +141,11 @@ export function AttributeTable({ geoJson, onClose }: AttributeTableProps) {
             {visibleFeatures.map((feature, i) => (
               <tr
                 key={startIdx + i}
-                className="border-b border-slate-800/50 transition hover:bg-slate-800/40"
+                className="border-b border-zinc-100 transition hover:bg-zinc-50"
                 style={{ height: ROW_HEIGHT }}
               >
                 {columns.map((col) => (
-                  <td key={col} className="truncate px-3 py-2 text-slate-300">
+                  <td key={col} className="truncate px-2 py-1 text-zinc-600">
                     {feature.properties?.[col] == null ? '' : String(feature.properties[col])}
                   </td>
                 ))}

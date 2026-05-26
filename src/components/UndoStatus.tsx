@@ -29,32 +29,32 @@ export function UndoStatus({ history, currentIndex, onUndo, onRedo, onJumpTo }: 
   const translateOp = (action: string) => t(`operation.${action}`);
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-sm font-medium text-slate-100">{t('undo.history')}</span>
-        <div className="flex gap-1">
+    <div className="rounded-md border border-zinc-200 bg-zinc-100 p-2.5">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[11px] font-medium text-zinc-600">{t('undo.history')}</span>
+        <div className="flex gap-0.5">
           <button
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+            className="rounded p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent"
             disabled={!canUndo}
             type="button"
             onClick={onUndo}
             title="Ctrl+Z"
           >
-            <RotateCcw className="size-4" />
+            <RotateCcw className="size-3.5" />
           </button>
           <button
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+            className="rounded p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent"
             disabled={!canRedo}
             type="button"
             onClick={onRedo}
             title="Ctrl+Shift+Z"
           >
-            <RotateCw className="size-4" />
+            <RotateCw className="size-3.5" />
           </button>
         </div>
       </div>
 
-      <div className="max-h-48 space-y-1 overflow-auto pr-1">
+      <div className="max-h-36 space-y-0.5 overflow-y-auto pr-1">
         {history.map((entry, index) => {
           const isCurrent = index === currentIndex;
           const ops = entry.ast.operations.map((op) => translateOp(op.action)).join(', ');
@@ -64,20 +64,20 @@ export function UndoStatus({ history, currentIndex, onUndo, onRedo, onJumpTo }: 
           return (
             <button
               key={entry.id}
-              className={`w-full rounded-xl px-3 py-2 text-left text-xs transition ${
+              className={`w-full rounded-md px-2 py-1.5 text-left text-[10px] transition ${
                 isCurrent
-                  ? 'border border-cyan-400/40 bg-cyan-950/40 text-cyan-200'
-                  : 'bg-slate-900/50 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  ? 'border border-zinc-300 bg-white text-zinc-900'
+                  : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700'
               }`}
               type="button"
               onClick={() => onJumpTo(index)}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate font-mono">{ops}</span>
-                <span className="shrink-0 text-slate-600">{formatTime(entry.timestamp)}</span>
+                <span className="shrink-0 text-zinc-400">{formatTime(entry.timestamp)}</span>
               </div>
               {inputCount != null && outputCount != null && (
-                <span className="mt-0.5 text-slate-500">
+                <span className="mt-0.5 text-zinc-400">
                   {t('undo.featureChange', { input: inputCount, output: outputCount })}
                 </span>
               )}
@@ -86,7 +86,7 @@ export function UndoStatus({ history, currentIndex, onUndo, onRedo, onJumpTo }: 
         })}
       </div>
 
-      <p className="mt-2 text-center text-[10px] text-slate-600">{t('undo.keyboardHint')}</p>
+      <p className="mt-1.5 text-center text-[9px] text-zinc-300">{t('undo.keyboardHint')}</p>
     </div>
   );
 }

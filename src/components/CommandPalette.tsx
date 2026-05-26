@@ -49,7 +49,6 @@ export function CommandPalette({
   const gateway = brainGateway ?? defaultBrainGateway;
   const canPlan = Boolean(metadata && command.trim()) && !disabled && !isPlanning;
 
-  // Update suggestions as user types
   const updateSuggestions = useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea || !metadata) {
@@ -134,7 +133,6 @@ export function CommandPalette({
     const { text, cursorPos: newPos } = applySuggestion(command, cursorPos, suggestion);
     onCommandChange(text);
     setShowSuggestions(false);
-    // Restore cursor position after React re-render
     requestAnimationFrame(() => {
       textarea.focus();
       textarea.setSelectionRange(newPos, newPos);
@@ -173,7 +171,6 @@ export function CommandPalette({
       setIsPlanning(true);
       onError(null);
 
-      // Multi-step: split by `;` or ` then `
       const segments = command.split(/;\s*|\s+then\s+/i).map((s) => s.trim()).filter(Boolean);
 
       if (segments.length === 0) {
@@ -182,7 +179,6 @@ export function CommandPalette({
       }
 
       if (segments.length === 1) {
-        // Single command — original path
         const ast = await gateway.plan({ command, metadata, schemaVersion: '1.0' });
         const validation = validateAst(ast, metadata);
         if (!validation.ok) {
@@ -196,7 +192,6 @@ export function CommandPalette({
         setRisks(validation.risks);
         onAstReady(validation.ast, validation.risks);
       } else {
-        // Multi-step: plan each segment, merge operations
         const allOperations: GeoSurgicalAst['operations'] = [];
         let targetLayer: string | undefined;
         const allRisks: string[] = [];
@@ -218,7 +213,6 @@ export function CommandPalette({
           }
         }
 
-        // Deduplicate consecutive export operations — keep only the last one
         const merged: GeoSurgicalAst['operations'] = [];
         for (const op of allOperations) {
           if (op.action === 'export' && merged.length > 0 && merged[merged.length - 1].action === 'export') {
@@ -253,15 +247,13 @@ export function CommandPalette({
   };
 
   return (
-    <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
-      <div>
-        <h2 className="text-lg font-semibold text-white">{t('command.title')}</h2>
-      </div>
+    <section className="space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+      <h2 className="text-xs font-medium text-zinc-600">{t('command.title')}</h2>
 
       <div className="relative">
         <textarea
           ref={textareaRef}
-          className="min-h-28 w-full resize-none rounded-2xl border border-slate-700 bg-slate-950 p-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
+          className="min-h-[72px] w-full resize-none rounded-md border border-zinc-300 bg-white p-3 text-xs text-zinc-800 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 font-mono"
           placeholder={metadata ? t('command.placeholder.ready') : t('command.placeholder.waiting')}
           value={command}
           onChange={(event) => onCommandChange(event.target.value)}
@@ -269,14 +261,14 @@ export function CommandPalette({
           onKeyDown={handleKeyDown}
         />
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute left-4 right-4 z-10 mt-1 max-h-48 overflow-auto rounded-xl border border-slate-700 bg-slate-900/95 shadow-xl shadow-black/40 backdrop-blur-sm">
+          <div className="absolute left-0 right-0 z-10 mt-1 max-h-40 overflow-auto rounded-md border border-zinc-200 bg-white shadow-lg shadow-zinc-200/50">
             {suggestions.map((s, i) => (
               <button
                 key={`${s.kind}-${s.label}`}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition ${
+                className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] transition ${
                   i === selectedSuggestion
-                    ? 'bg-cyan-950/50 text-cyan-200'
-                    : 'text-slate-300 hover:bg-slate-800'
+                    ? 'bg-zinc-100 text-zinc-900'
+                    : 'text-zinc-500 hover:bg-zinc-50'
                 }`}
                 type="button"
                 onMouseDown={(e) => {
@@ -284,68 +276,68 @@ export function CommandPalette({
                   acceptSuggestion(s);
                 }}
               >
-                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                  s.kind === 'operation' ? 'bg-cyan-900/50 text-cyan-300' :
-                  s.kind === 'field' ? 'bg-emerald-900/50 text-emerald-300' :
-                  'bg-purple-900/50 text-purple-300'
+                <span className={`shrink-0 rounded px-1 py-px text-[9px] font-medium ${
+                  s.kind === 'operation' ? 'bg-zinc-200 text-zinc-600' :
+                  s.kind === 'field' ? 'bg-zinc-200 text-zinc-600' :
+                  'bg-zinc-200 text-zinc-600'
                 }`}>
                   {s.kind}
                 </span>
                 <span className="truncate font-mono">{s.label}</span>
               </button>
             ))}
-            <div className="border-t border-slate-700/50 px-3 py-1.5 text-[10px] text-slate-600">
-              <kbd className="rounded bg-slate-800 px-1 py-0.5">Tab</kbd> / <kbd className="rounded bg-slate-800 px-1 py-0.5">Enter</kbd> accept · <kbd className="rounded bg-slate-800 px-1 py-0.5">Esc</kbd> dismiss
+            <div className="border-t border-zinc-200 px-2.5 py-1 text-[9px] text-zinc-400">
+              <kbd className="rounded bg-zinc-100 px-1 py-px">Tab</kbd> / <kbd className="rounded bg-zinc-100 px-1 py-px">Enter</kbd> · <kbd className="rounded bg-zinc-100 px-1 py-px">Esc</kbd>
             </div>
           </div>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         <button
-          className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+          className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-400"
           disabled={!canPlan}
           type="button"
           onClick={planCommand}
         >
-          <Sparkles className={`size-4 ${isPlanning ? 'animate-spin' : ''}`} />
+          <Sparkles className={`size-3.5 ${isPlanning ? 'animate-spin' : ''}`} />
           {isPlanning ? t('command.planning') : t('command.generateAst')}
         </button>
         <button
-          className="inline-flex items-center gap-2 rounded-full border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-cyan-300 disabled:cursor-not-allowed disabled:text-slate-600"
+          className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-xs text-zinc-600 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:text-zinc-300"
           disabled={!plannedAst || disabled}
           type="button"
           onClick={() => plannedAst && onExecute(plannedAst, command)}
         >
-          <Play className="size-4" />
+          <Play className="size-3.5" />
           {t('command.execute')}
         </button>
         <button
-          className="inline-flex items-center gap-2 rounded-full border border-slate-700 px-3 py-2 text-xs text-slate-400 transition hover:border-emerald-400 hover:text-emerald-300 disabled:cursor-not-allowed disabled:text-slate-700"
+          className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2 py-1.5 text-[10px] text-zinc-500 transition hover:border-zinc-400 hover:text-zinc-700 disabled:cursor-not-allowed disabled:text-zinc-300"
           disabled={!plannedAst}
           type="button"
           onClick={() => void handleSaveTemplate()}
           title={t('template.save')}
         >
-          <Save className="size-3.5" />
+          <Save className="size-3" />
           {t('template.save')}
         </button>
       </div>
 
       {risks.length ? (
-        <p className="rounded-2xl border border-amber-400/30 bg-amber-950/30 p-3 text-sm text-amber-100">
+        <p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-700">
           {t('command.risky')}
         </p>
       ) : null}
 
       {history.length ? (
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500">{t('command.history')}</p>
-          <div className="flex flex-wrap gap-2">
+        <div className="space-y-1">
+          <p className="text-[10px] text-zinc-400">{t('command.history')}</p>
+          <div className="flex flex-wrap gap-1">
             {history.map((item) => (
               <button
                 key={item}
-                className="rounded-full bg-slate-950 px-3 py-1.5 text-xs text-slate-300 hover:text-cyan-200"
+                className="rounded-md bg-zinc-100 px-2 py-1 text-[10px] text-zinc-500 font-mono hover:text-zinc-700 transition"
                 type="button"
                 onClick={() => onCommandChange(item)}
               >
@@ -356,61 +348,61 @@ export function CommandPalette({
         </div>
       ) : null}
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <button
-          className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300"
+          className="flex items-center gap-1.5 text-[10px] text-zinc-400 hover:text-zinc-600 transition"
           type="button"
           onClick={() => setShowTemplates((v) => !v)}
         >
           {t('template.title')}
-          <span className="rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px]">{templates.length}</span>
+          <span className="rounded bg-zinc-100 px-1 py-px text-[9px]">{templates.length}</span>
         </button>
 
         {showTemplates && (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {templates.length > 0 ? (
-              <ul className="space-y-1 max-h-48 overflow-auto">
+              <ul className="space-y-0.5 max-h-40 overflow-y-auto">
                 {templates.map((tpl) => (
-                  <li key={tpl.id} className="group flex items-center gap-2 rounded-xl bg-slate-950/70 px-3 py-2">
+                  <li key={tpl.id} className="group flex items-center gap-1.5 rounded-md bg-zinc-100 px-2 py-1.5">
                     <button
                       className="min-w-0 flex-1 text-left"
                       type="button"
                       onClick={() => handleLoadTemplate(tpl)}
                     >
-                      <p className="truncate text-xs font-medium text-slate-200">{tpl.name}</p>
-                      <p className="truncate text-[10px] text-slate-600">{tpl.command}</p>
+                      <p className="truncate text-[11px] font-medium text-zinc-700">{tpl.name}</p>
+                      <p className="truncate text-[10px] text-zinc-400 font-mono">{tpl.command}</p>
                     </button>
                     <button
-                      className="shrink-0 rounded p-1 text-slate-600 opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                      className="shrink-0 rounded p-0.5 text-zinc-400 opacity-0 transition hover:text-red-500 group-hover:opacity-100"
                       type="button"
                       title={t('template.delete')}
                       onClick={() => void handleDeleteTemplate(tpl.id)}
                     >
-                      <Trash2 className="size-3" />
+                      <Trash2 className="size-2.5" />
                     </button>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-[11px] text-slate-600">{t('template.empty')}</p>
+              <p className="text-[10px] text-zinc-300">{t('template.empty')}</p>
             )}
 
-            <div className="flex gap-2">
+            <div className="flex gap-1">
               <button
-                className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 hover:border-cyan-400 hover:text-cyan-300"
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-0.5 text-[10px] text-zinc-500 hover:border-zinc-400 hover:text-zinc-700"
                 type="button"
                 onClick={handleExportTemplates}
                 disabled={templates.length === 0}
               >
-                <Download className="size-3" />
+                <Download className="size-2.5" />
                 {t('template.export')}
               </button>
               <button
-                className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 hover:border-cyan-400 hover:text-cyan-300"
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-0.5 text-[10px] text-zinc-500 hover:border-zinc-400 hover:text-zinc-700"
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <Upload className="size-3" />
+                <Upload className="size-2.5" />
                 {t('template.import')}
               </button>
               <input

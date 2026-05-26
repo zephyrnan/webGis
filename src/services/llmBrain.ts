@@ -191,9 +191,9 @@ export class LlmBrainGateway implements BrainGateway {
 
     const isOpenAiFormat = endpoint.includes('api.openai.com')
       || endpoint.includes('deepseek')
-      || endpoint.includes('openai')
+      || endpoint.includes('openai.com')
       || endpoint.includes('modelscope')
-      || !endpoint.includes('localhost');
+      || endpoint.includes('v1/chat/completions');
 
     if (isOpenAiFormat) {
       return this.callOpenAiFormat(endpoint, apiKey, model, temperature, userMessage);

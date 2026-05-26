@@ -47,6 +47,8 @@
   - `npm run generate:types` — Passed.
   - `cargo check --manifest-path src-wasm/Cargo.toml` — Passed, 0 warnings.
   - `npm run build` — Passed, no chunk-size warning.
+  - `npm run typecheck` — Passed (post-refactor).
+  - `npm test` — Passed, 45 tests (post-refactor).
   - `npm audit --registry https://registry.npmjs.org` — Passed, 0 vulnerabilities.
 - Manual browser verification (2026-05-25):
   - [x] Page loads correctly with Real WASM indicator.
@@ -56,9 +58,11 @@
   - [x] Progress timeline shows metadata events.
   - [x] Mock Brain command parsing verified via 45 unit tests.
   - [x] Error callout displays LLM errors with recovery suggestions.
+  - [x] Three-column dashboard layout (12-col grid) with no global scrollbar.
+  - [x] Vercel-style dark theme applied across all components.
+  - [x] Layer tree with visibility toggles and expandable schema view.
 - Known Issues:
   - LLM Brain depends on external API availability (quota, network). Use Mock Brain or local Ollama for reliable operation.
-  - Operation log "Mock WASM 已执行 filter_area (移除了 0 个要素)" contains hardcoded Chinese (BUG-013).
 - Notes:
   - All P0 and P1 ROADMAP items completed.
   - All P2 ROADMAP items completed (history, templates, batch, export, quality report).

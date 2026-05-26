@@ -28,14 +28,14 @@ export function ErrorCallout({ error }: ErrorCalloutProps) {
     : translatedMessage;
 
   return (
-    <div className="rounded-2xl border border-amber-400/40 bg-amber-950/40 p-4 text-sm text-amber-100">
-      <div className="flex items-center gap-2 font-semibold">
-        <AlertTriangle className="size-4" />
+    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs">
+      <div className="flex items-center gap-1.5 font-medium text-amber-700">
+        <AlertTriangle className="size-3.5" />
         {error.code}
       </div>
-      <p className="mt-2 text-amber-50/90">{message}</p>
+      <p className="mt-1.5 text-amber-600">{message}</p>
       {error.suggestedUserInput ? (
-        <p className="mt-2 rounded-xl bg-black/20 p-2 text-amber-50">{t('error.suggestion')} {resolveI18nMessage(error.suggestedUserInput, t)}</p>
+        <p className="mt-1.5 rounded-md bg-amber-100 p-2 text-amber-600">{t('error.suggestion')} {resolveI18nMessage(error.suggestedUserInput, t)}</p>
       ) : null}
     </div>
   );

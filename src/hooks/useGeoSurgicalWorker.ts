@@ -105,7 +105,7 @@ export function useGeoSurgicalWorker() {
     worker.onerror = (event) => {
       setError({
         code: 'WORKER_RUNTIME_ERROR',
-        message: event.message ? `Worker 运行时错误：${event.message}` : 'Worker 运行时错误。',
+        message: event.message ?? 'WORKER_RUNTIME_ERROR',
         recoverable: false,
       });
       setStatus('failed');
@@ -114,7 +114,7 @@ export function useGeoSurgicalWorker() {
     worker.onmessageerror = () => {
       setError({
         code: 'WORKER_MESSAGE_ERROR',
-        message: 'Worker 消息反序列化失败，请检查传输的数据是否可克隆。',
+        message: 'WORKER_MESSAGE_ERROR',
         recoverable: false,
       });
       setStatus('failed');
@@ -169,6 +169,7 @@ export function useGeoSurgicalWorker() {
     setError(null);
     setResult(null);
     setUndo(null);
+    setProgress([]);
     lastAstRef.current = ast;
     lastCommandRef.current = command ?? '';
     post({ type: 'EXECUTE_AST', taskId, ast });

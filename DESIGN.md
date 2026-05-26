@@ -2,79 +2,89 @@
 
 ## Product UI Goal
 
-GeoSurgical should feel like a focused spatial-data workbench: upload a file, describe the operation in natural language, inspect the generated plan, preview the result, and export with confidence.
+GeoSurgical is a spatial-data workbench. The interface should feel like a clean, focused developer console: precise and bright — where every pixel serves the workflow of uploading, inspecting, commanding, and exporting geospatial data.
 
 ## Style Direction
 
-- Direction: dense professional geospatial console with language-first workflow.
-- References: Linear-style command focus, Vercel-style dark technical surfaces, OpenLayers-style map-first validation.
-- Visual tone: dark, precise, high-contrast, cyan/emerald accents for active/healthy states, amber/red for warnings and failures.
+- Direction: Clean light dashboard with subtle depth.
+- References: Linear (light), Vercel Dashboard (light), GitHub Light.
+- Visual tone: white background, zinc-gray surfaces, dark text and accents. No decorative color — only functional state colors (emerald/amber/red).
 
 ## Design Principles
 
-1. Keep the command path central: file context, command input, AST preview, progress, map, and result should stay visible together on wide screens.
-2. Prefer compact cards over modal-heavy flows so users can inspect spatial metadata and execution state at once.
-3. Distinguish engine states clearly: real WASM, mock fallback, loading, warnings, and execution failures must be visible.
-4. Make large-data handling explicit: previews, Blob URL downloads, WebGL toggles, and unavailable undo states should be understandable.
-5. Use natural-language affordances, but always show auditable AST and operation logs before/after execution.
+1. No global scroll. The viewport is `h-screen w-full overflow-hidden`. Only local panels scroll.
+2. Three-column grid layout (`grid-cols-12`): data flow (3 cols), visualization (5 cols), control flow (4 cols).
+3. Monochrome-first. Color is reserved for state signals: success (emerald), warning (amber), error (red), active (zinc border).
+4. Compact density. Small text (10-12px), tight padding, minimal gaps. This is a power-user tool.
+5. Monospace for data. File names, field names, AST, commands, and technical values use `font-mono`.
 
 ## Color Tokens
 
-- App background: `slate-950`
-- Panel background: `slate-900/70`, deeper nested surfaces `slate-950/70`
-- Primary accent: `cyan-400` / `cyan-300`
-- Success accent: `emerald-400` / `emerald-300`
-- Warning accent: `amber-400` / `amber-200`
-- Error accent: `rose-400` / `red-300`
-- Borders: `slate-800`, active borders `cyan-400/40`
-- Primary text: `white`, secondary text `slate-300`, muted text `slate-500`
+- App background: `#ffffff` (white)
+- Panel surface: `zinc-50` (`#fafafa`)
+- Nested surface: `zinc-100` (`#f4f4f5`)
+- Borders: `zinc-200` (`#e4e4e7`), active `zinc-300` (`#d4d4d8`)
+- Primary text: `zinc-900` (`#18181b`)
+- Secondary text: `zinc-600` (`#52525b`)
+- Muted text: `zinc-400` (`#a1a1aa`)
+- Accent (primary action): `zinc-900` bg + `white` text (inverted button)
+- Success: `emerald-500` / `emerald-700`
+- Warning: `amber-500` / `amber-700`
+- Error: `red-500` / `red-700`
 
 ## Typography
 
-- Use the project default sans-serif stack.
-- Page title: large, bold, tight tracking.
-- Panel headings: semibold, compact.
-- Metadata, logs, helper text: small text with strong contrast hierarchy.
-- Code/AST content: monospace where appropriate, never decorative.
+- Font: Inter (system sans-serif stack).
+- Page title: `text-sm font-semibold` (compact header).
+- Panel headings: `text-xs font-medium text-zinc-600`.
+- Body/metadata: `text-[11px]` or `text-xs`.
+- Monospace values: `font-mono text-[11px]`.
+- Labels: `text-[10px] text-zinc-400 uppercase tracking-wider`.
 
 ## Layout
 
-- Maximum content width: approximately `1600px`.
-- Desktop layout: three-column grid for upload/metadata, command/AST/progress, map/result.
-- Tablet/mobile: stack cards vertically with command flow before preview/result.
-- Spacing: card gaps around `1.5rem`; internal card padding around `1.25rem`.
-- Rounded corners: large rounded cards (`rounded-3xl`) to soften dense technical UI.
+- Full viewport: `h-screen w-full flex flex-col overflow-hidden`.
+- Header: `shrink-0`, compact (py-2.5), border-bottom only.
+- Main: `flex-1 min-h-0 grid grid-cols-12 gap-px bg-zinc-200`.
+- Left (col-span-3): file upload + layer tree + batch. Layer tree scrolls locally.
+- Center (col-span-5): map canvas fills remaining space (`flex-1 min-h-0`).
+- Right (col-span-4): command palette (shrink-0) + AST/progress (scrollable) + history/result (max-h-45vh scrollable).
+- Gap: `gap-px` with `bg-zinc-200` creates subtle 1px dividers.
+- No rounded-3xl. Use `rounded-lg` or `rounded-md` for cards.
 
 ## Components
 
-- Buttons: pill-shaped, clear disabled state, primary cyan for execution/download.
-- Inputs: dark surface, visible focus border, no hidden validation feedback.
-- Cards: bordered dark panels with subtle transparency.
-- Tables: compact rows, sticky context where useful, avoid visual noise.
-- Map: keep controls minimal; WebGL/Canvas and comparison toggles stay near map title.
-- Progress: timeline messages should be short and readable, with percent where useful.
-- Error callouts: structured code/message/suggestion, never only raw stack traces.
+- Buttons: `rounded-md`, compact padding. Primary = zinc-900 bg + white text. Secondary = zinc-300 border + zinc-600 text.
+- Inputs: `bg-white border-zinc-300`, monospace, `focus:border-zinc-400`.
+- Cards: `rounded-lg border border-zinc-200 bg-zinc-50 p-3`.
+- Tables: compact rows (32px), sticky header, virtualized for large datasets.
+- Map: fills center column, light OL controls override.
+- Progress: thin 1px bar, zinc-900 fill on zinc-200 track.
+- Error callouts: `border-amber-300 bg-amber-50 text-amber-700`.
+- Layer tree: tree indentation with `border-l border-zinc-200 ml-5 pl-3`.
 
 ## Interaction States
 
-- Hover: lighten border/text, avoid layout shift.
-- Focus: cyan border/ring for keyboard discoverability.
-- Loading: show progress or engine loading badge, not silent disabled controls.
-- Error: keep the failed context visible and suggest recovery when possible.
-- Disabled: lower contrast but keep label readable.
+- Hover: darken border/text, no layout shift.
+- Focus: `border-zinc-400` for inputs, no colored rings.
+- Loading: spinner or progress bar, controls stay visible but disabled.
+- Error: inline callout with amber border, not toast-only.
+- Disabled: `opacity-40` or `text-zinc-300`.
 
 ## Do / Don't
 
 ### Do
 
-- Keep WASM/mock mode visible.
-- Show AST and operation logs as auditable artifacts.
-- Use preview hulls or summaries for large datasets.
-- Keep i18n-compatible UI copy.
+- Keep the layout locked to viewport height.
+- Use monospace for all technical/data values.
+- Show WASM/mock mode badge in header.
+- Show AST as auditable JSON in a scrollable pre block.
+- Use `overflow-y-auto` on specific panels, never on body.
 
 ### Don't
 
-- Add complex GIS form panels that compete with the command palette.
-- Parse large binary files on the React main thread.
-- Hide failed operations behind generic toast-only feedback.
-- Add decorative animations that slow down large-file workflows.
+- Add global scrollbars.
+- Use decorative gradients or rounded-3xl cards.
+- Use colored backgrounds for non-state elements.
+- Add animations that distract from data inspection.
+- Use dark theme surfaces (zinc-900/zinc-950).

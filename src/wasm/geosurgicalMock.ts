@@ -73,8 +73,9 @@ export function createMockGeoSurgicalWasm(): GeoSurgicalWasm {
 
 function extractGeoJsonMetadata(input: Uint8Array, context: MetadataInputContext): GeoSurgicalMetadata {
   const collection = parseGeoJson(input) ?? sampleGeojson;
-  const fields = collectFields(collection).slice(0, 50);
-  const totalFieldCount = collectFields(collection).length;
+  const allFields = collectFields(collection);
+  const fields = allFields.slice(0, 50);
+  const totalFieldCount = allFields.length;
 
   return {
     fileType: 'geojson',
@@ -93,7 +94,7 @@ function extractGeoJsonMetadata(input: Uint8Array, context: MetadataInputContext
     warnings: [
       {
         code: 'WASM_MOCK_MODE',
-        message: '当前使用 TypeScript Mock WASM 提取元数据，真实 Rust WASM 尚未接入。',
+        message: 'WASM_MOCK_MODE',
         recoverable: true,
       },
     ],
@@ -119,14 +120,14 @@ function createBinaryMockMetadata(context: MetadataInputContext, extension: stri
     warnings: [
       {
         code: 'WASM_MOCK_MODE',
-        message: 'MVP 阶段不在 JS 主线程解析 zip/shp；真实解析会在 Rust WASM 接入后完成。',
+        message: 'WASM_MOCK_MODE',
         recoverable: true,
       },
       {
         code: 'CRS_UNKNOWN',
-        message: '当前 mock 无法读取投影信息，请用自然语言补充原始坐标系。',
+        message: 'CRS_UNKNOWN',
         recoverable: true,
-        suggestedUserInput: '这个文件的原始坐标系是 EPSG:4326。',
+        suggestedUserInput: 'shortcut.reason.wgs84',
       },
     ],
     layers: extension === '.zip' ? [{

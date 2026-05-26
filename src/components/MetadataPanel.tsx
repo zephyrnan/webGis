@@ -1,106 +1,94 @@
 import { FileSearch } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import type { GeoSurgicalMetadata } from '../types/metadata';
+import type { GeoLayer } from '../types/layer';
 import { formatBbox, formatBytes } from '../services/formatters';
+import { LayerTree } from './LayerTree';
 
 type MetadataPanelProps = {
   metadata: GeoSurgicalMetadata | null;
   selectedLayer?: string | null;
+  layers: GeoLayer[];
   onSelectLayer?(layerName: string): void;
+  onToggleVisibility?(layerName: string): void;
+  onToggleExpand?(layerName: string): void;
 };
 
-export function MetadataPanel({ metadata, selectedLayer, onSelectLayer }: MetadataPanelProps) {
+export function MetadataPanel({ metadata, selectedLayer, layers, onSelectLayer, onToggleVisibility, onToggleExpand }: MetadataPanelProps) {
   const { t } = useI18n();
 
   if (!metadata) {
     return (
-      <section className="flex items-center gap-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-400">
-        <FileSearch className="size-5 shrink-0 text-slate-600" />
+      <section className="flex items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-400">
+        <FileSearch className="size-4 shrink-0" />
         {t('metadata.empty')}
       </section>
     );
   }
 
   return (
-    <section className="animate-fade-in space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
+    <section className="animate-fade-in space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
       <div>
-        <h2 className="text-lg font-semibold text-white">{metadata.fileName}</h2>
-        <p className="text-sm text-slate-400">{metadata.fileType} · {formatBytes(metadata.fileSize)}</p>
+        <h2 className="text-sm font-medium text-zinc-800 truncate">{metadata.fileName}</h2>
+        <p className="text-[11px] text-zinc-400 mt-0.5">{metadata.fileType} · {formatBytes(metadata.fileSize)}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 text-sm">
+      <div className="grid grid-cols-2 gap-2 text-[11px]">
         <Metric label={t('metadata.featureEstimate')} value={metadata.featureCountEstimate ?? t('metadata.unknown')} />
         <Metric
           label="CRS"
           value={metadata.crs ?? t('metadata.notDetected')}
           badge={metadata.crsConfidence ? t(`crsConfidence.${metadata.crsConfidence}`) : undefined}
-          badgeColor={metadata.crsConfidence === 'authoritative' ? 'emerald' : metadata.crsConfidence === 'heuristic' ? 'amber' : 'slate'}
+          badgeColor={metadata.crsConfidence === 'authoritative' ? 'emerald' : metadata.crsConfidence === 'heuristic' ? 'amber' : 'zinc'}
         />
         <Metric label={t('metadata.encoding')} value={metadata.encoding ?? t('metadata.notDetected')} />
         <Metric label="BBox" value={formatBbox(metadata.bbox, t('metadata.notDetected'))} />
       </div>
 
-      {metadata.layers && metadata.layers.length > 0 && (
+      {layers.length > 0 && (
         <div>
-          <p className="mb-2 text-sm font-medium text-slate-200">{t('metadata.layers')}</p>
-          <div className="max-h-40 space-y-1 overflow-auto pr-1">
-            {metadata.layers.map((layer) => (
-              <button
-                key={layer.name}
-                className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
-                  selectedLayer === layer.name
-                    ? 'border border-cyan-400/40 bg-cyan-950/40 text-cyan-200'
-                    : 'bg-slate-950/70 text-slate-300 hover:bg-slate-800'
-                }`}
-                type="button"
-                onClick={() => onSelectLayer?.(layer.name)}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{layer.name}</span>
-                  <span className="text-xs text-slate-500">
-                    {layer.featureCount ?? '?'} {t('metadata.featureCount')} · {layer.fields.length} {t('metadata.fields')}
-                  </span>
-                </div>
-                {(layer.crs || layer.encoding) && (
-                  <div className="mt-1 flex gap-2 text-xs text-slate-500">
-                    {layer.crs && <span>CRS: {layer.crs}</span>}
-                    {layer.encoding && <span>{t('metadata.encoding')}: {layer.encoding}</span>}
-                  </div>
-                )}
-              </button>
-            ))}
+          <p className="mb-1.5 text-[11px] font-medium text-zinc-500 uppercase tracking-wider">{t('metadata.layers')}</p>
+          <div className="max-h-48 overflow-y-auto pr-1">
+            <LayerTree
+              layers={layers}
+              selectedLayer={selectedLayer ?? null}
+              onSelectLayer={(name) => onSelectLayer?.(name)}
+              onToggleVisibility={(name) => onToggleVisibility?.(name)}
+              onToggleExpand={(name) => onToggleExpand?.(name)}
+            />
           </div>
         </div>
       )}
 
       <div>
-        <div className="mb-2 flex items-center justify-between text-sm">
-          <span className="font-medium text-slate-200">{t('metadata.fields')}</span>
-          <span className="text-slate-500">
+        <div className="mb-1.5 flex items-center justify-between text-[11px]">
+          <span className="font-medium text-zinc-500 uppercase tracking-wider">{t('metadata.fields')}</span>
+          <span className="text-zinc-400">
             {metadata.fieldPolicy.includedFieldCount}/{metadata.fieldPolicy.totalFieldCount}
             {metadata.fieldPolicy.truncated ? t('metadata.truncated') : ''}
           </span>
         </div>
-        <div className="max-h-48 space-y-2 overflow-auto pr-1">
+        <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
           {metadata.fields.length === 0 ? (
-            <p className="rounded-xl bg-slate-950/70 p-3 text-sm text-slate-500">{t('metadata.noFields')}</p>
+            <p className="rounded-md bg-zinc-100 p-2 text-[11px] text-zinc-400">{t('metadata.noFields')}</p>
           ) : metadata.fields.map((field) => (
-            <div key={field.name} className="rounded-xl bg-slate-950/70 p-3 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-slate-100">{field.name}</span>
-                <span className="text-xs text-cyan-300">{field.type}</span>
+            <div key={field.name} className="rounded-md bg-zinc-100 px-2.5 py-1.5 text-[11px]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-zinc-700 truncate">{field.name}</span>
+                <span className="shrink-0 text-zinc-400">{field.type}</span>
               </div>
-              {field.sample?.length ? <p className="mt-1 truncate text-slate-500">sample: {field.sample.join(', ')}</p> : null}
+              {field.sample?.length ? <p className="mt-0.5 truncate text-zinc-400">{field.sample.join(', ')}</p> : null}
             </div>
           ))}
         </div>
       </div>
 
       {metadata.warnings.length ? (
-        <div className="space-y-2">
+        <div className="space-y-1">
           {metadata.warnings.map((warning) => (
-            <div key={warning.code} className="rounded-xl border border-amber-400/30 bg-amber-950/30 p-3 text-sm text-amber-100">
-              <span className="font-semibold">{warning.code}</span>：{t(`warning.${warning.code}`) === `warning.${warning.code}` ? warning.message : t(`warning.${warning.code}`)}
+            <div key={warning.code} className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700">
+              <span className="font-medium">{warning.code}</span>{' '}
+              {t(`warning.${warning.code}`) === `warning.${warning.code}` ? warning.message : t(`warning.${warning.code}`)}
             </div>
           ))}
         </div>
@@ -113,20 +101,20 @@ function Metric({ label, value, badge, badgeColor }: {
   label: string;
   value: string | number;
   badge?: string;
-  badgeColor?: 'emerald' | 'amber' | 'slate';
+  badgeColor?: 'emerald' | 'amber' | 'zinc';
 }) {
   const colorClass = badgeColor === 'emerald'
-    ? 'bg-emerald-950/60 text-emerald-300 border-emerald-400/30'
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
     : badgeColor === 'amber'
-      ? 'bg-amber-950/60 text-amber-300 border-amber-400/30'
-      : 'bg-slate-800 text-slate-400 border-slate-600/30';
+      ? 'bg-amber-50 text-amber-700 border-amber-300'
+      : 'bg-zinc-100 text-zinc-500 border-zinc-200';
   return (
-    <div className="rounded-2xl bg-slate-950/70 p-3">
-      <p className="text-xs text-slate-500">{label}</p>
-      <div className="mt-1 flex items-center gap-2">
-        <p className="truncate text-sm font-medium text-slate-100">{value}</p>
+    <div className="rounded-md bg-zinc-100 px-2.5 py-1.5">
+      <p className="text-[10px] text-zinc-400">{label}</p>
+      <div className="mt-0.5 flex items-center gap-1.5">
+        <p className="truncate text-[11px] font-medium text-zinc-700">{value}</p>
         {badge && (
-          <span className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${colorClass}`}>
+          <span className={`inline-flex shrink-0 items-center rounded border px-1 py-px text-[9px] font-medium ${colorClass}`}>
             {badge}
           </span>
         )}

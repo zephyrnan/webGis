@@ -777,16 +777,17 @@ fn extract_chinese_gk_zone(upper_wkt: &str) -> Option<String> {
 
 /// Extract a zone number from a WKT name (last sequence of digits).
 fn extract_zone_number(wkt: &str) -> Option<u32> {
-    // Find the last sequence of digits in the string
     let mut last_num = String::new();
-    let mut in_num = false;
+    let mut current_num = String::new();
     for c in wkt.chars() {
         if c.is_ascii_digit() {
-            last_num.push(c);
-            in_num = true;
-        } else if in_num {
-            break;
+            current_num.push(c);
+        } else if !current_num.is_empty() {
+            last_num = std::mem::take(&mut current_num);
         }
+    }
+    if !current_num.is_empty() {
+        last_num = current_num;
     }
     last_num.parse().ok()
 }

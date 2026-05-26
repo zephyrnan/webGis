@@ -36,16 +36,16 @@ export function Dropzone({ disabled, multiple, onFile, onError }: DropzoneProps)
 
   return (
     <label
-      className="group flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-slate-600 bg-slate-900/70 p-6 text-center transition hover:border-cyan-400 hover:bg-cyan-950/30"
+      className="group flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-4 text-center transition hover:border-zinc-400 hover:bg-zinc-100"
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
         if (!disabled) handleFiles(event.dataTransfer.files);
       }}
     >
-      <UploadCloud className="mb-4 size-10 text-cyan-300" />
-      <span className="text-lg font-semibold text-white">{t('dropzone.title')}</span>
-      <span className="mt-2 text-sm text-slate-400">{t('dropzone.subtitle')}</span>
+      <UploadCloud className="mb-2 size-6 text-zinc-400 group-hover:text-zinc-600 transition" />
+      <span className="text-xs font-medium text-zinc-600">{t('dropzone.title')}</span>
+      <span className="mt-1 text-[11px] text-zinc-400">{t('dropzone.subtitle')}</span>
       <input
         className="hidden"
         disabled={disabled}
