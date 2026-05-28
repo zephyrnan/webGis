@@ -193,6 +193,7 @@ export class LlmBrainGateway implements BrainGateway {
       || endpoint.includes('deepseek')
       || endpoint.includes('openai.com')
       || endpoint.includes('modelscope')
+      || endpoint.includes('siliconflow')
       || endpoint.includes('v1/chat/completions');
 
     if (isOpenAiFormat) {

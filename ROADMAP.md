@@ -1,15 +1,16 @@
 # GeoSurgical WebGIS 产品化路线图
 
-## Context
+## 背景
 
 核心功能链路（上传 → 自然语言 → AST → WASM 执行 → 地图预览 → 导出）已全部打通，MVP + 阶段 A/B/C 均已完成。本文档规划从"MVP 完成"到"可交付产品"的路径。
 
 当前状态：
 - 15 个 AST 操作全部实现（TS + Rust + Zod + LLM prompt）
 - AST Schema 单一来源已建立（`schemas/ast-schema.json`）
-- 纯前端架构，无后端，LLM key 暴露在浏览器 JS 中
+- 纯前端架构，无后端；远程 LLM API key 会暴露在浏览器 JS 中，生产建议使用本地 Ollama 或后端代理
 - Docker 部署可用（Nginx 静态托管）
-- 手动浏览器验证未完成，安全审计未通过
+- 安全审计、类型检查、Lint、生产构建已通过
+- 2026-05-28 已修复 SiliconFlow 接入、CSP connect-src 白名单、操作历史地图快照同步问题
 
 ---
 
@@ -17,9 +18,9 @@
 
 ### 0.1 手动浏览器验证 ✅
 - [x] 上传 GeoJSON → metadata 正确显示
-- [ ] 上传 ZIP Shapefile → metadata + 编码检测（需手动测试）
+- [x] 上传 ZIP Shapefile → metadata + 编码检测（Lebanon ZIP 样例已进入 Real WASM metadata/图层流程）
 - [x] Mock Brain 输入命令 → AST 生成（45 单元测试验证）
-- [ ] LLM Brain（本地 Ollama）→ 同上完整流程（需本地 Ollama）
+- [ ] LLM Brain（OpenAI-compatible endpoint / 本地 Ollama）→ AST 生成与执行完整流程（SiliconFlow 路由与 CSP 已修复，仍需浏览器端重新验证）
 - [x] 结果导出下载（GeoJSON + CSV）
 - [x] 6 语言切换正常
 - **产出**：`ACCEPTANCE.md` 已更新
@@ -100,10 +101,11 @@
 
 ## P3：架构改进
 
-### 3.1 LLM Key 安全策略（已决定：仅支持本地 Ollama） ✅
-- **决策**：生产环境仅支持本地 Ollama，不暴露远程 API key
-- **方案**：README 和部署文档明确说明；移除 `VITE_LLM_API_KEY` 的使用场景说明；Docker Compose 可选集成 Ollama 服务
-- **涉及**：`README.md`、`docker-compose.yml`、`.env.example`、`docs/deployment.md`
+### 3.1 LLM Key 安全策略（生产本地/代理，开发支持 OpenAI-compatible） ✅
+- **决策**：生产环境推荐本地 Ollama 或后端代理；开发环境可直连 OpenAI-compatible endpoint（OpenAI / DeepSeek / ModelScope / SiliconFlow 等），但不得把真实密钥用于公开生产前端构建。
+- **方案**：README、`.env.example` 和部署文档明确说明 `VITE_*` 会注入浏览器 JS；CSP `connect-src` 维护允许的开发 endpoint 白名单。
+- **近期同步**：2026-05-28 修复 SiliconFlow endpoint 识别和 CSP 白名单。
+- **涉及**：`README.md`、`docker-compose.yml`、`.env.example`、`docs/deployment.md`、`index.html`、`nginx.conf`
 
 ### 3.2 私有化部署配置 ✅
 - **功能**：提供完整的私有化部署文档和配置

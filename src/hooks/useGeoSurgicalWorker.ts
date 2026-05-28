@@ -59,34 +59,44 @@ export function useGeoSurgicalWorker() {
       }
 
       if (response.type === 'RESULT_READY') {
-        setResult(response.result);
         setUndo(response.undo);
         setStatus('completed');
         if (lastAstRef.current) {
-          const entry: HistoryEntry = {
-            id: nanoid(),
-            fileName: lastFileNameRef.current,
-            command: lastCommandRef.current,
-            ast: lastAstRef.current!,
-            resultSnapshot: response.result,
-            timestamp: Date.now(),
-          };
-          setHistory((prev) => {
-            const truncated = prev.entries.slice(0, prev.currentIndex + 1);
-            return {
-              entries: [...truncated, entry],
-              currentIndex: truncated.length,
+          const snapshot = response.result.blobUrl && !response.result.content
+            ? fetch(response.result.blobUrl)
+                .then((r) => r.json())
+                .then((geojson) => ({ ...response.result, content: geojson, blobUrl: undefined }))
+                .catch(() => response.result)
+            : Promise.resolve(response.result);
+
+          void snapshot.then((snap) => {
+            setResult(snap);
+            const entry: HistoryEntry = {
+              id: nanoid(),
+              fileName: lastFileNameRef.current,
+              command: lastCommandRef.current,
+              ast: lastAstRef.current!,
+              resultSnapshot: snap,
+              timestamp: Date.now(),
             };
+            setHistory((prev) => {
+              const truncated = prev.entries.slice(0, prev.currentIndex + 1);
+              return {
+                entries: [...truncated, entry],
+                currentIndex: truncated.length,
+              };
+            });
+            void saveSession({
+              id: entry.id,
+              fileName: entry.fileName,
+              command: entry.command,
+              ast: entry.ast,
+              resultSnapshot: snap,
+              timestamp: entry.timestamp,
+            });
           });
-          // Persist to IndexedDB (fire-and-forget)
-          void saveSession({
-            id: entry.id,
-            fileName: entry.fileName,
-            command: entry.command,
-            ast: entry.ast,
-            resultSnapshot: entry.resultSnapshot,
-            timestamp: entry.timestamp,
-          });
+        } else {
+          setResult(response.result);
         }
         return;
       }

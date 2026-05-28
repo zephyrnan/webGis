@@ -144,10 +144,13 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
 
     let source: VectorSource;
 
-    if (result.blobUrl) {
+    if (result.blobUrl && !result.content) {
       source = new VectorSource({
         url: result.blobUrl,
-        format: new GeoJSON({ dataProjection: 'EPSG:4326' }),
+        format: new GeoJSON({
+          dataProjection: 'EPSG:4326',
+          featureProjection: 'EPSG:3857',
+        }),
       });
       blobUrlRef.current = result.blobUrl;
     } else if (result.content) {
@@ -213,7 +216,7 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       }
     };
 
-    if (result?.blobUrl) {
+    if (result?.blobUrl && !result.content) {
       source.once('featuresloadend', fitExtent);
     } else {
       fitExtent();
