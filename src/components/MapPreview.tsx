@@ -9,7 +9,7 @@ import WebGLVectorLayer from 'ol/layer/WebGLVector';
 import OSM from 'ol/source/OSM';
 import VectorSource from 'ol/source/Vector';
 import GeoJSON from 'ol/format/GeoJSON';
-import { Fill, Stroke, Style } from 'ol/style';
+import { Circle as CircleStyle, Fill, Stroke, Style } from 'ol/style';
 import Select from 'ol/interaction/Select';
 import Overlay from 'ol/Overlay';
 import { click } from 'ol/events/condition';
@@ -128,6 +128,11 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       const previewLayer = new VectorLayer({
         source: previewSource,
         style: new Style({
+          image: new CircleStyle({
+            radius: 4,
+            fill: new Fill({ color: 'rgba(51, 153, 204, 0.75)' }),
+            stroke: new Stroke({ color: '#ffffff', width: 1 }),
+          }),
           stroke: new Stroke({ color: '#3399cc', width: 2, lineDash: [4, 4] }),
           fill: new Fill({ color: 'rgba(51, 153, 204, 0.1)' }),
         }),
@@ -170,6 +175,10 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       layer = new WebGLVectorLayer({
         source,
         style: {
+          'circle-radius': 4,
+          'circle-fill-color': 'rgba(37, 99, 235, 0.8)',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 1,
           'stroke-color': '#2563eb',
           'stroke-width': 2,
           'fill-color': 'rgba(37, 99, 235, 0.15)',
@@ -179,6 +188,11 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       layer = new VectorLayer({
         source,
         style: new Style({
+          image: new CircleStyle({
+            radius: 4,
+            fill: new Fill({ color: 'rgba(37, 99, 235, 0.8)' }),
+            stroke: new Stroke({ color: '#ffffff', width: 1 }),
+          }),
           stroke: new Stroke({ color: '#2563eb', width: 2 }),
           fill: new Fill({ color: 'rgba(37, 99, 235, 0.15)' }),
         }),
@@ -246,6 +260,10 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       layer = new WebGLVectorLayer({
         source,
         style: {
+          'circle-radius': 4,
+          'circle-fill-color': 'rgba(249, 115, 22, 0.8)',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 1,
           'stroke-color': '#f97316',
           'stroke-width': 2,
           'fill-color': 'rgba(249, 115, 22, 0.15)',
@@ -256,6 +274,11 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
       layer = new VectorLayer({
         source,
         style: new Style({
+          image: new CircleStyle({
+            radius: 4,
+            fill: new Fill({ color: 'rgba(249, 115, 22, 0.8)' }),
+            stroke: new Stroke({ color: '#ffffff', width: 1 }),
+          }),
           stroke: new Stroke({ color: '#f97316', width: 2 }),
           fill: new Fill({ color: 'rgba(249, 115, 22, 0.15)' }),
         }),

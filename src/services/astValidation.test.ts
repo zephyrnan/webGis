@@ -50,6 +50,15 @@ describe('validateAst', () => {
     if (result.ok) expect(result.risks).toContain('ast.risk');
   });
 
+  it('accepts filter_attribute with valid field', () => {
+    const result = validateAst({
+      version: '1.0',
+      operations: [{ action: 'filter_attribute', field: 'name', operator: '==', value: '承德市' }],
+    }, metadata);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.risks).toContain('ast.risk');
+  });
+
   it('accepts drop_empty with valid field', () => {
     const result = validateAst({
       version: '1.0',

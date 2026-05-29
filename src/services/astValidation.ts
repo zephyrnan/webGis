@@ -39,7 +39,7 @@ export function validateAst(ast: unknown, metadata: GeoSurgicalMetadata): Valida
       return missingField(operation.field);
     }
 
-    if (operation.action === 'drop_empty' || operation.action === 'filter_area') {
+    if (operation.action === 'drop_empty' || operation.action === 'filter_area' || operation.action === 'filter_attribute') {
       risks.push('ast.risk');
     }
 

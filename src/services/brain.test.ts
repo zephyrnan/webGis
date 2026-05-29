@@ -111,6 +111,20 @@ describe('MockBrainGateway', () => {
     ]);
   });
 
+  // --- filter_attribute ---
+  it('recognizes Chinese text attribute filter commands', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: '只保留 name 为承德市的要素，然后导出 GeoJSON',
+      metadata,
+      schemaVersion: '1.0',
+    });
+
+    expect(ast.operations).toEqual([
+      { action: 'filter_attribute', field: 'name', operator: '==', value: '承德市' },
+      { action: 'export', format: 'geojson' },
+    ]);
+  });
+
   // --- fix_encoding ---
   it('recognizes Chinese encoding repair commands', async () => {
     const ast = await new MockBrainGateway().plan({

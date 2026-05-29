@@ -17,6 +17,15 @@
 - [x] 多格式导出：支持 GeoJSON 和 CSV。
 - [x] 数据质量报告：要素数量变化、编码修复、几何问题、警告。
 - [x] AST Schema 类型生成：通过 `npm run generate:types` 从 `schemas/ast-schema.json` 生成。
+- [x] 文本属性过滤：支持 `filter_attribute`，可按字段文本值 `==`、`!=`、`contains` 过滤要素。
+
+## 2026-05-28 文本属性过滤升级
+
+- [x] Schema 新增 `filter_attribute` 操作。
+- [x] `npm run generate:all` 已更新 TypeScript、Zod、Rust 和 LLM Prompt 派生产物。
+- [x] Rust WASM dispatcher 已实现 `Operation::FilterAttribute`。
+- [x] LLM System Prompt 已补充文本属性过滤使用规则。
+- [x] Mock Brain、自动补全、i18n 操作名和操作日志已同步。
 
 ## 2026-05-28 最近修复
 
@@ -35,7 +44,7 @@
 ## 验证项
 
 - [x] 项目依赖已在本地安装。
-- [x] 单元测试通过：3 个文件，共 45 个测试。
+- [x] 单元测试通过：3 个文件，共 47 个测试。
 - [x] TypeScript 类型检查通过。
 - [x] ESLint 通过。
 - [x] Rust crate 检查通过，0 warning。
@@ -51,6 +60,13 @@
 
 - 状态：通过
 - 已验证命令：
+  - `npm run typecheck` — 通过（点状小图层地图显示修复，2026-05-29）。
+  - `npm run build` — 通过（点状小图层地图显示修复，2026-05-29）。
+  - `npm test` — 通过，3 个文件 / 47 个测试（文本属性过滤升级，2026-05-28）。
+  - `npm run generate:all` — 通过（文本属性过滤升级，2026-05-28）。
+  - `npm run typecheck` — 通过（文本属性过滤升级，2026-05-28）。
+  - `cargo check --manifest-path src-wasm/Cargo.toml` — 通过（文本属性过滤升级，2026-05-28）。
+  - `npm run build` — 通过（文本属性过滤升级，2026-05-28）。
   - `npm test` — 通过，3 个文件 / 45 个测试。
   - `npm run typecheck` — 通过。
   - `npm run generate:types` — 通过。
@@ -71,7 +87,7 @@
   - [x] GeoJSON 上传 → 元数据提取（要素、CRS、编码、bbox、字段）。
   - [x] 可以根据元数据生成快捷标签。
   - [x] 进度时间线显示 metadata 事件。
-  - [x] Mock Brain 命令解析已通过 45 个单元测试验证。
+  - [x] Mock Brain 命令解析已通过 47 个单元测试验证。
   - [x] 错误提示可以显示 LLM 错误和恢复建议。
   - [x] 三栏仪表盘布局（12 栏 grid）无全局滚动条。
   - [x] 已应用克制明亮的工具型界面风格。

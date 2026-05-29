@@ -31,6 +31,7 @@
       "description": "所有可用的 GeoSurgical 操作",
       "oneOf": [
         { "$ref": "#/$defs/filter_area" },
+        { "$ref": "#/$defs/filter_attribute" },
         { "$ref": "#/$defs/drop_empty" },
         { "$ref": "#/$defs/rename_field" },
         { "$ref": "#/$defs/transform_crs" },
@@ -57,6 +58,18 @@
         "field": { "type": "string", "minLength": 1, "description": "要过滤的数值字段名" },
         "operator": { "type": "string", "enum": [">=", ">", "<=", "<", "="], "description": "比较运算符" },
         "value": { "type": "number", "description": "比较阈值" }
+      }
+    },
+    "filter_attribute": {
+      "type": "object",
+      "description": "按文本属性字段过滤要素",
+      "required": ["action", "field", "operator", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "filter_attribute" },
+        "field": { "type": "string", "description": "要过滤的字段名" },
+        "operator": { "type": "string", "enum": ["==", "!=", "contains"], "description": "文本比较运算符" },
+        "value": { "type": "string", "description": "要匹配的文本值" }
       }
     },
     "drop_empty": {

@@ -8,6 +8,7 @@ export type Suggestion = {
 
 const OPERATIONS: Suggestion[] = [
   { label: 'filter_area', kind: 'operation', insertText: 'filter_area' },
+  { label: 'filter_attribute', kind: 'operation', insertText: 'filter_attribute' },
   { label: 'drop_empty', kind: 'operation', insertText: 'drop_empty' },
   { label: 'rename_field', kind: 'operation', insertText: 'rename_field' },
   { label: 'transform_crs', kind: 'operation', insertText: 'transform_crs' },

@@ -10,6 +10,12 @@ export const operationSchema = z.discriminatedUnion('action', [
     value: z.number().finite(),
   }),
   z.object({
+    action: z.literal("filter_attribute"),
+    field: z.string(),
+    operator: z.enum(["==","!=","contains"]),
+    value: z.string(),
+  }),
+  z.object({
     action: z.literal("drop_empty"),
     field: z.string().min(1),
   }),

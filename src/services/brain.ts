@@ -50,6 +50,16 @@ export class MockBrainGateway implements BrainGateway {
       });
     }
 
+    const textFilter = extractTextAttributeFilter(input.command, input.metadata);
+    if (textFilter) {
+      operations.push({
+        action: 'filter_attribute',
+        field: textFilter.field,
+        operator: textFilter.operator,
+        value: textFilter.value,
+      });
+    }
+
     if (mentionsEmptyName(normalized)) {
       assertField(fieldNames, 'name');
       operations.push({ action: 'drop_empty', field: 'name' });
@@ -173,6 +183,38 @@ function mentionsLessThan(command: string) {
 
 function mentionsEqualToZero(command: string) {
   return command.includes('为 0') || command.includes('等于 0') || command.includes('is 0') || command.includes('equals 0') || command.includes('= 0');
+}
+
+function extractTextAttributeFilter(command: string, metadata: GeoSurgicalMetadata): { field: string; operator: '==' | '!=' | 'contains'; value: string } | null {
+  const normalized = command.trim().toLowerCase();
+  const isFilterIntent = normalized.includes('保留')
+    || normalized.includes('只保留')
+    || normalized.includes('筛选')
+    || normalized.includes('过滤')
+    || normalized.includes('keep')
+    || normalized.includes('where')
+    || normalized.includes('filter');
+
+  if (!isFilterIntent) return null;
+
+  const field = metadata.fields.find((item) => normalized.includes(item.name.toLowerCase()))?.name;
+  if (!field) return null;
+  if (field.toLowerCase() === 'area') return null;
+
+  const fieldPattern = escapeRegExp(field);
+  const match = command.match(new RegExp(`${fieldPattern}\\s*(?:!=|!==|不等于|不是|==|=|为|是|等于|contains|包含|含有)\\s*["“”']?([^"“”'，,。\\s]+)`, 'i'));
+  const value = match?.[1]?.trim().replace(/的?(?:要素|记录|feature|features)$/i, '');
+  if (!value) return null;
+
+  const operator: '==' | '!=' | 'contains' = normalized.includes('contains') || normalized.includes('包含') || normalized.includes('含有')
+    ? 'contains'
+    : (normalized.includes('!=') || normalized.includes('不等于') || normalized.includes('不是') ? '!=' : '==');
+
+  return { field, operator, value };
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function mentionsEmptyName(command: string) {

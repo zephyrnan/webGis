@@ -6,6 +6,7 @@
  */
 export type Operation =
   | FilterArea
+  | FilterAttribute
   | DropEmpty
   | RenameField
   | TransformCrs
@@ -57,6 +58,24 @@ export interface FilterArea {
    * 比较阈值
    */
   value: number;
+}
+/**
+ * 按文本属性字段过滤要素
+ */
+export interface FilterAttribute {
+  action: "filter_attribute";
+  /**
+   * 要过滤的字段名
+   */
+  field: string;
+  /**
+   * 文本比较运算符
+   */
+  operator: "==" | "!=" | "contains";
+  /**
+   * 要匹配的文本值
+   */
+  value: string;
 }
 /**
  * 删除指定字段为空的要素

@@ -21,6 +21,12 @@ pub enum Operation {
         operator: String,
         value: f64,
     },
+    #[serde(rename = "filter_attribute")]
+    FilterAttribute {
+        field: String,
+        operator: String,
+        value: String,
+    },
     #[serde(rename = "drop_empty")]
     DropEmpty {
         field: String,

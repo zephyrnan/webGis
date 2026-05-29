@@ -192,6 +192,7 @@ wasm-pack build --target web --release
 | Action | 用途 |
 | --- | --- |
 | `filter_area` | 按数值字段、操作符和值过滤要素。 |
+| `filter_attribute` | 按文本属性字段过滤或保留要素，支持 `==`、`!=`、`contains`。 |
 | `drop_empty` | 删除指定字段为空的要素。 |
 | `rename_field` | 重命名属性字段。 |
 | `transform_crs` | 转换支持的 CRS，例如 WGS84 / GCJ-02 / Web Mercator。 |
@@ -212,6 +213,11 @@ wasm-pack build --target web --release
 
 2026-05-28 已验证：
 
+- `npm run generate:all` — 通过，已从 Schema 生成 TypeScript、Zod、Rust 和 LLM Prompt 派生产物。
+- `npm test` — 通过，3 个文件 / 47 个测试，覆盖 `filter_attribute` AST 校验和 Mock Brain 文本属性过滤识别。
+- `npm run typecheck` — 通过，覆盖 `filter_attribute` 全链路类型更新。
+- `cargo check --manifest-path src-wasm/Cargo.toml` — 通过，Rust WASM dispatcher 文本属性过滤分支编译通过。
+- `npm run build` — 通过，生产构建可用。
 - `npm run typecheck` — 通过，覆盖 SiliconFlow endpoint / CSP / 操作历史地图同步修复。
 - `npm run build` — 通过，覆盖 SiliconFlow endpoint / CSP / 操作历史地图同步修复。
 - CSP 已在 `index.html` 和 `nginx.conf` 中允许 SiliconFlow 开发请求。

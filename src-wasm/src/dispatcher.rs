@@ -46,6 +46,22 @@ pub fn execute(
                 let removed = before - fc.features.len();
                 logs.push(format!("operation:filter_area|removed={}", removed));
             }
+            Operation::FilterAttribute { field, operator, value } => {
+                let before = fc.features.len();
+                fc.features.retain(|f| {
+                    let Some(prop_val) = get_text_property(f, field) else {
+                        return false;
+                    };
+                    match operator.as_str() {
+                        "==" => prop_val == *value,
+                        "!=" => prop_val != *value,
+                        "contains" => prop_val.contains(value),
+                        _ => false,
+                    }
+                });
+                let removed = before - fc.features.len();
+                logs.push(format!("operation:filter_attribute|removed={}", removed));
+            }
             Operation::DropEmpty { field } => {
                 let before = fc.features.len();
                 fc.features.retain(|f| {
@@ -754,6 +770,7 @@ fn is_zip_input(input: &[u8], file_name: &str) -> bool {
 fn operation_name(op: &Operation) -> &str {
     match op {
         Operation::FilterArea { .. } => "filter_area",
+        Operation::FilterAttribute { .. } => "filter_attribute",
         Operation::DropEmpty { .. } => "drop_empty",
         Operation::RenameField { .. } => "rename_field",
         Operation::TransformCrs { .. } => "transform_crs",
@@ -776,6 +793,16 @@ fn get_numeric_property(feature: &geojson::Feature, field: &str) -> f64 {
         .and_then(|p| p.get(field))
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0)
+}
+
+fn get_text_property(feature: &geojson::Feature, field: &str) -> Option<String> {
+    feature.properties.as_ref()
+        .and_then(|p| p.get(field))
+        .and_then(|v| match v {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(s) => Some(s.clone()),
+            other => Some(other.to_string()),
+        })
 }
 
 fn compare_numeric(left: f64, operator: &str, right: f64) -> bool {

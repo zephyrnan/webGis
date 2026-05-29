@@ -5,11 +5,12 @@
 核心功能链路（上传 → 自然语言 → AST → WASM 执行 → 地图预览 → 导出）已全部打通，MVP + 阶段 A/B/C 均已完成。本文档规划从"MVP 完成"到"可交付产品"的路径。
 
 当前状态：
-- 15 个 AST 操作全部实现（TS + Rust + Zod + LLM prompt）
+- 16 个 AST 操作全部实现（TS + Rust + Zod + LLM prompt）
 - AST Schema 单一来源已建立（`schemas/ast-schema.json`）
 - 纯前端架构，无后端；远程 LLM API key 会暴露在浏览器 JS 中，生产建议使用本地 Ollama 或后端代理
 - Docker 部署可用（Nginx 静态托管）
 - 安全审计、类型检查、Lint、生产构建已通过
+- 2026-05-28 已新增 `filter_attribute` 文本属性过滤操作，并通过 Schema → TS/Zod/Rust/Prompt 自动生成链同步
 - 2026-05-28 已修复 SiliconFlow 接入、CSP connect-src 白名单、操作历史地图快照同步问题
 
 ---
@@ -58,7 +59,7 @@
 - **涉及**：`src-wasm/src/dispatcher.rs`、`src-wasm/Cargo.toml`
 
 ### 1.4 测试覆盖扩充 ✅
-- **现状**：45 个单元测试（brain.test.ts、astValidation.test.ts、qualityReport.test.ts）
+- **现状**：47 个单元测试（brain.test.ts、astValidation.test.ts、qualityReport.test.ts）
 - **涉及**：`src/services/*.test.ts`
 
 ---

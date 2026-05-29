@@ -28,13 +28,14 @@ ${AVAILABLE_ACTIONS}
 4. 每个指令集末尾通常需要一个 export 操作。
 5. 如果用户指令完全无法理解，返回 {"version":"1.0","operations":[{"action":"noop","reason":"无法理解指令"}]}。
 6. transform_crs 必须同时包含 from 和 to，支持的转换对：EPSG:4326→GCJ-02、EPSG:4326→EPSG:3857、GCJ-02→EPSG:4326。例如 {"action":"transform_crs","from":"EPSG:4326","to":"EPSG:3857"}。
-7. drop_empty 必须包含 field；filter_area 必须包含 field、operator、value；rename_field 必须包含 from、to。
-8. 如果检测到原始数据的 CRS 已经是 EPSG:4326，且用户没有明确要求转换到其他坐标系，绝对禁止生成 transform_crs 指令，不要写废话。
-9. 遇到乱码必须使用 fix_encoding，绝对禁止返回 noop。
-10. 如果用户只是要求”输出 WGS84 / 保持 WGS84 / 导出 WGS84”，且 Metadata CRS 已经是 EPSG:4326，只生成 export，不生成 EPSG:4326 到 EPSG:4326 的 transform_crs。
-11. 如果 Metadata 包含图层目录(layers)，用户可能指定操作某个图层。在 AST 中使用 target_layer 字段指定图层名称（放在 JSON 顶层，与 version 和 operations 同级）。
-12. 如果 Metadata 有多个图层但用户没有明确指定图层，target_layer 默认选择 featureCount 最大的主图层。
-13. 如果用户指令模糊且无法推断目标图层，返回 need_clarification action：{"action":"need_clarification","reason":"请指定要处理的图层名称"}。在 operations 数组中使用 need_clarification 时，不需要 export 操作。
+7. drop_empty 必须包含 field；filter_area 必须包含 field、operator、value；filter_attribute 必须包含 field、operator、value；rename_field 必须包含 from、to。
+8. 当用户要求根据名称、类型、区域等【文本属性】过滤或保留特定要素时，使用 filter_attribute 操作。例如保留 name 为承德市的要素。
+9. 如果检测到原始数据的 CRS 已经是 EPSG:4326，且用户没有明确要求转换到其他坐标系，绝对禁止生成 transform_crs 指令，不要写废话。
+10. 遇到乱码必须使用 fix_encoding，绝对禁止返回 noop。
+11. 如果用户只是要求”输出 WGS84 / 保持 WGS84 / 导出 WGS84”，且 Metadata CRS 已经是 EPSG:4326，只生成 export，不生成 EPSG:4326 到 EPSG:4326 的 transform_crs。
+12. 如果 Metadata 包含图层目录(layers)，用户可能指定操作某个图层。在 AST 中使用 target_layer 字段指定图层名称（放在 JSON 顶层，与 version 和 operations 同级）。
+13. 如果 Metadata 有多个图层但用户没有明确指定图层，target_layer 默认选择 featureCount 最大的主图层。
+14. 如果用户指令模糊且无法推断目标图层，返回 need_clarification action：{"action":"need_clarification","reason":"请指定要处理的图层名称"}。在 operations 数组中使用 need_clarification 时，不需要 export 操作。
 
 ### 正确指令示例（当用户要求修复 Windows-1256 乱码并输出 WGS84 时）：
 {
@@ -324,6 +325,15 @@ export class LlmBrainGateway implements BrainGateway {
         field: typeof op.field === 'string' && op.field ? op.field : 'area',
         operator: op.operator === '>' || op.operator === '<' || op.operator === '<=' || op.operator === '=' ? op.operator : '>=',
         value: typeof op.value === 'number' ? op.value : Number(op.value ?? 0),
+      };
+    }
+
+    if (action === 'filter_attribute') {
+      return {
+        action: 'filter_attribute',
+        field: typeof op.field === 'string' && op.field ? op.field : 'name',
+        operator: op.operator === '!=' || op.operator === 'contains' ? op.operator : '==',
+        value: typeof op.value === 'string' ? op.value : String(op.value ?? ''),
       };
     }
 
