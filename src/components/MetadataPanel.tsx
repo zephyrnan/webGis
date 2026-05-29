@@ -9,15 +9,45 @@ type MetadataPanelProps = {
   metadata: GeoSurgicalMetadata | null;
   selectedLayer?: string | null;
   layers: GeoLayer[];
+  isLoading?: boolean;
   onSelectLayer?(layerName: string): void;
   onToggleVisibility?(layerName: string): void;
   onToggleExpand?(layerName: string): void;
 };
 
-export function MetadataPanel({ metadata, selectedLayer, layers, onSelectLayer, onToggleVisibility, onToggleExpand }: MetadataPanelProps) {
+export function MetadataPanel({ metadata, selectedLayer, layers, isLoading, onSelectLayer, onToggleVisibility, onToggleExpand }: MetadataPanelProps) {
   const { t } = useI18n();
 
   if (!metadata) {
+    if (isLoading) {
+      return (
+        <section className="animate-fade-in space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100">
+              <FileSearch className="size-4 animate-pulse text-zinc-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-medium text-zinc-700">{t('metadata.loadingTitle')}</h2>
+              <p className="mt-0.5 text-[11px] text-zinc-400">{t('metadata.loadingSubtitle')}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="rounded-md bg-zinc-100 px-2.5 py-2">
+                <div className="h-2 w-12 animate-pulse rounded bg-zinc-200" />
+                <div className="mt-2 h-2.5 w-20 animate-pulse rounded bg-zinc-200" />
+              </div>
+            ))}
+          </div>
+          <div className="space-y-1.5">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-8 animate-pulse rounded-md bg-zinc-100" />
+            ))}
+          </div>
+        </section>
+      );
+    }
+
     return (
       <section className="flex items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-400">
         <FileSearch className="size-4 shrink-0" />

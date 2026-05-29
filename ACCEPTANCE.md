@@ -33,6 +33,20 @@
 - [x] 开发环境和 Nginx 的 CSP `connect-src` 均允许 `https://*.siliconflow.cn`。
 - [x] 操作历史地图快照保存稳定 GeoJSON 内容，不再依赖可撤销 Blob URL。
 
+## 2026-05-29 阶段 1：交付体验打磨
+
+- [x] 上传、元数据提取、执行完成阶段有可见工作流状态提示。
+- [x] Metadata 面板在上传/分诊期间显示 skeleton，不再只显示空态。
+- [x] README 增加快速演示流程、示例命令、Mock Brain / LLM Brain 边界说明。
+- [x] 生产安全边界继续明确：公开前端构建不得放入真实远程 LLM API key。
+
+## 2026-05-29 阶段 2：可维护性治理
+
+- [x] `src/i18n/locales.ts` 已拆为按语言维护的文件，并保留聚合导出兼容现有调用方。
+- [x] `AppShell.tsx` 主要 UI 状态已迁移到 reducer，保留 worker 和 batch hook 职责边界。
+- [x] `MapPreview.tsx` 统一 OpenLayers Map / Overlay / Select 生命周期，避免重复 Select interaction。
+- [x] `src-wasm/src/dispatcher.rs` 已按职责机械拆分为 input、export、preview、util 和 ops 模块，`dispatcher::execute` 入口保持不变。
+
 ## 不在当前范围内
 
 - 远程生产托管和自动化部署。
@@ -60,6 +74,13 @@
 
 - 状态：通过
 - 已验证命令：
+  - `npm test` — 通过，3 个文件 / 47 个测试（阶段 1/2 改进，2026-05-29）。
+  - `npm run typecheck` — 通过（阶段 1/2 改进，2026-05-29）。
+  - `npm run lint` — 通过（阶段 1/2 改进，2026-05-29）。
+  - `npm run build` — 通过（阶段 1/2 改进，2026-05-29）。
+  - `cargo check --manifest-path src-wasm/Cargo.toml` — 通过，0 warning（dispatcher 拆分，2026-05-29）。
+  - `cargo test --manifest-path src-wasm/Cargo.toml` — 通过，0 个 Rust 单元测试 / doctest（dispatcher 拆分，2026-05-29）。
+  - `npm audit --registry https://registry.npmjs.org --audit-level=high` — 通过，0 vulnerabilities（阶段 1/2 改进，2026-05-29）。
   - `npm run typecheck` — 通过（点状小图层地图显示修复，2026-05-29）。
   - `npm run build` — 通过（点状小图层地图显示修复，2026-05-29）。
   - `npm test` — 通过，3 个文件 / 47 个测试（文本属性过滤升级，2026-05-28）。
@@ -81,6 +102,12 @@
   - `npm run build` — 通过，使用手动分包（生产可用性检查，2026-05-26）。
   - `npm run typecheck` — 通过（SiliconFlow + 操作历史修复，2026-05-28）。
   - `npm run build` — 通过（SiliconFlow + 操作历史修复，2026-05-28）。
+- 手动浏览器验证（2026-05-29，阶段 1/2 改进）：
+  - [x] 页面可以正常加载，并显示 Real WASM 指示。
+  - [x] 上传 `test-data/sample.geojson` 后 Metadata Dry Run 正常显示。
+  - [x] 命令“删除 name 为空的要素，然后导出 GeoJSON”可以生成 AST。
+  - [x] 点击确认执行后生成结果摘要和“下载 GeoJSON”入口。
+  - [x] 当前页面控制台无错误；热更新期间出现的临时 i18n 语法错误已修复并刷新验证。
 - 手动浏览器验证（2026-05-25）：
   - [x] 页面可以正常加载，并显示 Real WASM 指示。
   - [x] 6 语言切换正常：zh、en、ja、ko、fr、es。

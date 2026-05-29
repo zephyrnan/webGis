@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useMemo, useReducer } from 'react';
 import { StopCircle } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import type { Language } from '../i18n/locales';
@@ -9,7 +9,7 @@ import type { PersistedSession } from '../services/history';
 import { buildShortcutTags } from '../services/shortcutTags';
 import { LlmBrainGateway } from '../services/llmBrain';
 import type { BrainGateway } from '../services/brain';
-import { useGeoSurgicalWorker } from '../hooks/useGeoSurgicalWorker';
+import { useGeoSurgicalWorker, type WorkerStatus } from '../hooks/useGeoSurgicalWorker';
 import { useBatchProcessor } from '../hooks/useBatchProcessor';
 import { AstPreview } from './AstPreview';
 import { CommandPalette } from './CommandPalette';
@@ -35,18 +35,134 @@ const brainGateway: BrainGateway | undefined = brainMode !== 'mock' && llmEndpoi
   ? new LlmBrainGateway({ endpoint: llmEndpoint, apiKey: llmApiKey, model: llmModel ?? 'qwen2.5:7b' })
   : undefined;
 
+type AppShellState = {
+  command: string;
+  localError: StructuredError | null;
+  ast: GeoSurgicalAst | null;
+  risks: string[];
+  selectedLayer: string | null;
+  pendingFiles: File[];
+  layerVisibility: Record<string, boolean>;
+  layerExpanded: Record<string, boolean>;
+};
+
+type AppShellAction =
+  | { type: 'fileSelected' }
+  | { type: 'commandChanged'; command: string }
+  | { type: 'astReady'; ast: GeoSurgicalAst | null; risks: string[] }
+  | { type: 'errorSet'; error: StructuredError | null }
+  | { type: 'layerSelected'; layerName: string }
+  | { type: 'layerVisibilityToggled'; layerName: string }
+  | { type: 'layerExpandedToggled'; layerName: string }
+  | { type: 'batchFileAdded'; file: File }
+  | { type: 'batchStarted' }
+  | { type: 'batchCleared' }
+  | { type: 'sessionLoaded'; ast: GeoSurgicalAst; command: string };
+
+const initialAppShellState: AppShellState = {
+  command: '',
+  localError: null,
+  ast: null,
+  risks: [],
+  selectedLayer: null,
+  pendingFiles: [],
+  layerVisibility: {},
+  layerExpanded: {},
+};
+
+function appShellReducer(state: AppShellState, action: AppShellAction): AppShellState {
+  switch (action.type) {
+    case 'fileSelected':
+      return {
+        ...state,
+        localError: null,
+        ast: null,
+        risks: [],
+        selectedLayer: null,
+        pendingFiles: [],
+        layerVisibility: {},
+        layerExpanded: {},
+      };
+    case 'commandChanged':
+      return { ...state, command: action.command };
+    case 'astReady':
+      return { ...state, ast: action.ast, risks: action.risks };
+    case 'errorSet':
+      return { ...state, localError: action.error };
+    case 'layerSelected':
+      return { ...state, selectedLayer: action.layerName };
+    case 'layerVisibilityToggled':
+      return {
+        ...state,
+        layerVisibility: {
+          ...state.layerVisibility,
+          [action.layerName]: !(state.layerVisibility[action.layerName] ?? true),
+        },
+      };
+    case 'layerExpandedToggled':
+      return {
+        ...state,
+        layerExpanded: {
+          ...state.layerExpanded,
+          [action.layerName]: !(state.layerExpanded[action.layerName] ?? false),
+        },
+      };
+    case 'batchFileAdded':
+      return { ...state, pendingFiles: [...state.pendingFiles, action.file] };
+    case 'batchStarted':
+    case 'batchCleared':
+      return { ...state, pendingFiles: [] };
+    case 'sessionLoaded':
+      return { ...state, ast: action.ast, command: action.command, risks: [] };
+  }
+}
+
+function WorkflowStatus({ status }: { status: WorkerStatus }) {
+  const { t } = useI18n();
+  const messageKey = status === 'uploading'
+    ? 'loading.uploading'
+    : status === 'metadata-extracting'
+      ? 'loading.metadata'
+      : status === 'executing'
+        ? 'loading.executing'
+        : status === 'completed'
+          ? 'loading.completed'
+          : null;
+
+  if (!messageKey) return null;
+
+  const isActive = status === 'uploading' || status === 'metadata-extracting' || status === 'executing';
+
+  return (
+    <div className="animate-fade-in rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] text-zinc-500">
+      <div className="flex items-center gap-2">
+        <span className={`size-1.5 rounded-full ${isActive ? 'animate-pulse bg-blue-500' : 'bg-emerald-500'}`} />
+        <span>{t(messageKey)}</span>
+      </div>
+      {isActive && (
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-zinc-200">
+          <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-500" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AppShell() {
   const { language, setLanguage, t } = useI18n();
   const worker = useGeoSurgicalWorker();
   const batch = useBatchProcessor();
-  const [command, setCommand] = useState('');
-  const [localError, setLocalError] = useState<StructuredError | null>(null);
-  const [ast, setAst] = useState<GeoSurgicalAst | null>(null);
-  const [risks, setRisks] = useState<string[]>([]);
-  const [selectedLayer, setSelectedLayer] = useState<string | null>(null);
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
-  const [layerExpanded, setLayerExpanded] = useState<Record<string, boolean>>({});
+  const [state, dispatch] = useReducer(appShellReducer, initialAppShellState);
+  const {
+    command,
+    localError,
+    ast,
+    risks,
+    selectedLayer,
+    pendingFiles,
+    layerVisibility,
+    layerExpanded,
+  } = state;
 
   const shortcutTags = useMemo(
     () => worker.metadata ? buildShortcutTags(worker.metadata, language) : [],
@@ -70,17 +186,12 @@ export function AppShell() {
   }, [worker.metadata, layerVisibility, layerExpanded]);
 
   const handleFile = useCallback((file: File) => {
-    setLocalError(null);
-    setAst(null);
-    setRisks([]);
-    setSelectedLayer(null);
-    setLayerVisibility({});
-    setLayerExpanded({});
+    dispatch({ type: 'fileSelected' });
     void worker.uploadFile(file);
   }, [worker]);
 
   const handleBatchFile = useCallback((file: File) => {
-    setPendingFiles((prev) => [...prev, file]);
+    dispatch({ type: 'batchFileAdded', file });
   }, []);
 
   const startBatch = useCallback(() => {
@@ -89,15 +200,15 @@ export function AppShell() {
       ? { ...ast, target_layer: selectedLayer }
       : ast;
     batch.startBatch(pendingFiles, finalAst);
-    setPendingFiles([]);
+    dispatch({ type: 'batchStarted' });
   }, [pendingFiles, ast, batch, selectedLayer]);
 
   const toggleLayerVisibility = useCallback((name: string) => {
-    setLayerVisibility((prev) => ({ ...prev, [name]: !(prev[name] ?? true) }));
+    dispatch({ type: 'layerVisibilityToggled', layerName: name });
   }, []);
 
   const toggleLayerExpand = useCallback((name: string) => {
-    setLayerExpanded((prev) => ({ ...prev, [name]: !(prev[name] ?? false) }));
+    dispatch({ type: 'layerExpandedToggled', layerName: name });
   }, []);
 
   return (
@@ -143,14 +254,14 @@ export function AppShell() {
         {/* Left panel: Data Flow — 3 cols */}
         <div className="col-span-3 flex flex-col gap-px bg-zinc-200 overflow-hidden">
           {/* Dropzone / Pending files */}
-          <div className="shrink-0 bg-white p-3">
+          <div className="shrink-0 space-y-2 bg-white p-3">
             {batch.batch.running ? null : pendingFiles.length > 0 ? (
               <div className="space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
                 <p className="text-[11px] text-zinc-500">{t('dropzone.title')}</p>
                 <Dropzone
                   multiple
                   disabled={!ast}
-                  onError={setLocalError}
+                  onError={(error) => dispatch({ type: 'errorSet', error })}
                   onFile={handleBatchFile}
                 />
                 <div className="flex gap-1.5">
@@ -165,7 +276,7 @@ export function AppShell() {
                   <button
                     className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-[11px] text-zinc-500 transition hover:border-zinc-400 hover:text-zinc-700"
                     type="button"
-                    onClick={() => setPendingFiles([])}
+                    onClick={() => dispatch({ type: 'batchCleared' })}
                   >
                     {t('batch.clear')}
                   </button>
@@ -177,20 +288,20 @@ export function AppShell() {
             ) : (
               <Dropzone
                 disabled={worker.status === 'uploading' || worker.status === 'metadata-extracting' || worker.status === 'executing'}
-                onError={setLocalError}
+                onError={(error) => dispatch({ type: 'errorSet', error })}
                 onFile={handleFile}
               />
             )}
+            <WorkflowStatus status={worker.status} />
           </div>
-
-          {/* File info + Layer tree — scrollable */}
           <div className="flex-1 min-h-0 overflow-y-auto bg-white p-3 space-y-3">
             <MetadataPanel
               metadata={worker.metadata}
               selectedLayer={selectedLayer}
               layers={layers}
+              isLoading={worker.status === 'uploading' || worker.status === 'metadata-extracting'}
               onSelectLayer={(name) => {
-                setSelectedLayer(name);
+                dispatch({ type: 'layerSelected', layerName: name });
                 worker.selectLayer(name);
               }}
               onToggleVisibility={toggleLayerVisibility}
@@ -214,7 +325,7 @@ export function AppShell() {
           {/* Error + Shortcut tags — compact, shrink-0 */}
           <div className="shrink-0 bg-white p-3 space-y-2">
             <ErrorCallout error={error} />
-            <ShortcutTags tags={shortcutTags} onPick={setCommand} />
+            <ShortcutTags tags={shortcutTags} onPick={(command) => dispatch({ type: 'commandChanged', command })} />
           </div>
 
           {/* Map canvas — fills remaining space */}
@@ -239,11 +350,10 @@ export function AppShell() {
               metadata={worker.metadata}
               brainGateway={brainGateway}
               onAstReady={(nextAst, nextRisks) => {
-                setAst(nextAst);
-                setRisks(nextRisks);
+                dispatch({ type: 'astReady', ast: nextAst, risks: nextRisks });
               }}
-              onCommandChange={setCommand}
-              onError={setLocalError}
+              onCommandChange={(command) => dispatch({ type: 'commandChanged', command })}
+              onError={(error) => dispatch({ type: 'errorSet', error })}
               onExecute={(execAst, execCommand) => {
                 const finalAst = selectedLayer
                   ? { ...execAst, target_layer: selectedLayer }
@@ -273,9 +383,7 @@ export function AppShell() {
           <div className="shrink-0 max-h-[45vh] overflow-y-auto bg-white p-3 space-y-3">
             <HistoryPanel
               onLoadSession={(session: PersistedSession) => {
-                setAst(session.ast);
-                setCommand(session.command);
-                setRisks([]);
+                dispatch({ type: 'sessionLoaded', ast: session.ast, command: session.command });
                 worker.executeAst(session.ast, session.command);
               }}
             />

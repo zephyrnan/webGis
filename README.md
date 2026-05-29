@@ -118,6 +118,30 @@ npm run dev
 npm run dev
 ```
 
+## 快速演示
+
+1. 启动开发服务器后打开 Vite 输出的本地地址。
+2. 上传一个小型 `.geojson`、`.json` 或 ZIP Shapefile 文件；首次上传会显示文件读取和 Metadata skeleton。
+3. 等左侧 Metadata 面板出现字段、图层、CRS 和编码摘要后，在右侧命令框输入示例命令。
+4. 点击“生成 AST”，检查生成的 JSON 操作链，再点击“确认执行”。
+5. 在地图中审阅结果，必要时打开属性表，最后从结果面板下载 GeoJSON 或复制 CSV。
+
+可用于演示的命令示例：
+
+```text
+删除 name 字段为空的要素，然后导出 GeoJSON
+只保留 name 包含 Beijing 的要素，然后导出 GeoJSON
+把结果导出为 CSV
+修复编码乱码，然后导出 GeoJSON
+转换为 Web Mercator 坐标并导出 GeoJSON
+```
+
+### Mock Brain 与 LLM Brain
+
+- Mock Brain 适合离线演示、单元测试和固定示例命令，依赖关键词规则，不能代表完整自然语言理解能力。
+- LLM Brain 适合真实自然语言规划，但依赖本地 Ollama 或 OpenAI-compatible endpoint 的可用性和模型输出质量。
+- 生产或公开交付时推荐本地 Ollama 或后端代理，不要把真实远程 API key 放入前端构建。
+
 ### 构建
 
 ```bash

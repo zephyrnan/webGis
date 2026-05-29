@@ -29,6 +29,7 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
   const mapRef = useRef<Map | null>(null);
   const resultLayerRef = useRef<VectorLayer<VectorSource> | WebGLVectorLayer | null>(null);
   const selectRef = useRef<Select | null>(null);
+  const overlayRef = useRef<Overlay | null>(null);
   const blobUrlRef = useRef<string | null>(null);
   const originalLayerRef = useRef<VectorLayer<VectorSource> | WebGLVectorLayer | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
@@ -38,7 +39,7 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
   const [showTable, setShowTable] = useState(false);
 
   useEffect(() => {
-    if (!targetRef.current) return;
+    if (!targetRef.current || !popupRef.current) return;
 
     const map = new Map({
       target: targetRef.current,
@@ -47,28 +48,19 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
     });
     mapRef.current = map;
 
-    return () => {
-      map.setTarget(undefined);
-      mapRef.current = null;
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !popupRef.current) return;
-
     const overlay = new Overlay({
       element: popupRef.current,
       autoPan: { animation: { duration: 200 } },
     });
     map.addOverlay(overlay);
+    overlayRef.current = overlay;
 
-    const select = new Select({ condition: click, layers: [] });
+    const select = new Select({
+      condition: click,
+      layers: (layer) => layer === resultLayerRef.current,
+    });
     map.addInteraction(select);
+    selectRef.current = select;
 
     select.on('select', (e) => {
       const feature = e.selected[0];
@@ -90,6 +82,14 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
     return () => {
       map.removeInteraction(select);
       map.removeOverlay(overlay);
+      map.setTarget(undefined);
+      mapRef.current = null;
+      selectRef.current = null;
+      overlayRef.current = null;
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
     };
   }, []);
 
@@ -97,12 +97,8 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
     const map = mapRef.current;
     if (!map) return;
 
-    // Always clean up previous Select interaction, regardless of which path we take
-    const prevSelect = selectRef.current;
-    if (prevSelect) {
-      map.removeInteraction(prevSelect);
-      selectRef.current = null;
-    }
+    setSelectedProps(null);
+    overlayRef.current?.setPosition(undefined);
 
     // Revoke previous blobUrl if any
     const prevBlobUrl = blobUrlRef.current;
@@ -202,27 +198,6 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
     map.addLayer(layer);
     resultLayerRef.current = layer;
 
-    const popupOverlay = map.getOverlays().getArray()[0];
-    const newSelect = new Select({ condition: click, layers: [layer] });
-    newSelect.on('select', (e) => {
-      const feature = e.selected[0];
-      if (feature) {
-        const props = { ...feature.getProperties() };
-        delete props.geometry;
-        setSelectedProps(props);
-        const geometry = feature.getGeometry();
-        if (geometry && popupOverlay) {
-          const extent = geometry.getExtent();
-          popupOverlay.setPosition([(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2]);
-        }
-      } else {
-        setSelectedProps(null);
-        popupOverlay?.setPosition(undefined);
-      }
-    });
-    map.addInteraction(newSelect);
-    selectRef.current = newSelect;
-
     const fitExtent = () => {
       const extent = source.getExtent();
       if (extent && extent.every(Number.isFinite)) {
@@ -299,12 +274,7 @@ export function MapPreview({ result, originalGeoJson }: MapPreviewProps) {
 
   const closePopup = useCallback(() => {
     setSelectedProps(null);
-    const map = mapRef.current;
-    if (!map) return;
-    const overlays = map.getOverlays().getArray();
-    for (const overlay of overlays) {
-      overlay.setPosition(undefined);
-    }
+    overlayRef.current?.setPosition(undefined);
   }, []);
 
   return (
