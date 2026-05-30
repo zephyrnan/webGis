@@ -9,6 +9,8 @@ export const zh = {
     'language.es': 'Español',
     'dropzone.title': '拖拽 GIS 文件到这里',
     'dropzone.subtitle': '支持 .geojson / .json / .zip / .shp，主线程只接收并转交 Worker。',
+    'dropzone.selectLocal': '选择本地文件',
+    'dropzone.opening': '正在打开...',
     'metadata.empty': '上传文件后，Worker 会回传轻量 Metadata 摘要。',
     'loading.uploading': '正在读取文件并转交 Worker...',
     'loading.metadata': '正在提取图层、字段、坐标系和编码信息...',

@@ -148,6 +148,29 @@ npm run dev
 npm run build
 ```
 
+### 桌面端运行（Tauri v2）
+
+Tauri 桌面端是现有 WebGIS 的增强容器，不替代 Web Worker + Rust WASM 的 GIS 处理链。Web 版仍可继续使用 `npm run dev` 和 `npm run build`。
+
+```bash
+npm run tauri:dev
+```
+
+桌面端增强能力：
+
+- 使用 Tauri Rust 后端代理 LLM 请求，读取 `.env` 中的 `TAURI_LLM_ENDPOINT`、`TAURI_LLM_MODEL`、`TAURI_LLM_API_KEY`，避免 API key 注入前端 JS bundle。
+- 在保留拖拽上传的同时，Tauri 环境会额外显示原生“选择本地文件”按钮。
+- 原生文件选择使用 dialog 插件获取路径，再通过自定义 `read_local_file` command 读取字节，不向前端开放宽泛文件系统权限。
+
+开发阶段 Tauri Rust 后端基于 `src-tauri` 的 `CARGO_MANIFEST_DIR` 定位并读取项目根目录 `.env`。如果未来正式分发桌面应用，建议把配置迁移到用户级配置目录或改为 `Tauri App → 私有后端服务 → LLM Provider`，不要把商业 API key 内置到发给不可信用户的客户端。
+
+桌面端常用命令：
+
+```bash
+npm run tauri:dev
+npm run tauri:build
+```
+
 ### 使用 Docker Desktop 运行
 
 确保 Docker Desktop 已启动，然后构建并启动容器：
@@ -201,6 +224,8 @@ wasm-pack build --target web --release
 | `npm run dev` | 启动 Vite 开发服务器。 |
 | `npm run build` | 执行 TypeScript 项目构建和 Vite 生产构建。 |
 | `npm run preview` | 预览生产构建产物。 |
+| `npm run tauri:dev` | 启动 Tauri v2 桌面开发应用。 |
+| `npm run tauri:build` | 构建 Tauri 桌面应用安装包。 |
 | `npm test` | 运行 Vitest 单元测试。 |
 | `npm run test:watch` | 以 watch 模式运行 Vitest。 |
 | `npm run test:e2e` | 运行 Playwright 端到端测试。 |

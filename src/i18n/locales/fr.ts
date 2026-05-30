@@ -9,6 +9,8 @@ export const fr = {
     'language.es': 'Español',
     'dropzone.title': 'Déposez les fichiers GIS ici',
     'dropzone.subtitle': 'Prend en charge .geojson / .json / .zip / .shp. Le thread principal ne fait que recevoir et transmettre le fichier.',
+    'dropzone.selectLocal': 'Choisir un fichier local',
+    'dropzone.opening': 'Ouverture...',
     'metadata.empty': 'Après l\'upload, le Worker retourne un résumé Metadata léger.',
     'loading.uploading': 'Lecture du fichier et transfert vers le Worker...',
     'loading.metadata': 'Extraction des couches, champs, CRS et informations d’encodage...',

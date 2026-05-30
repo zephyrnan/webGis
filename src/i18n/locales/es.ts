@@ -9,6 +9,8 @@ export const es = {
     'language.es': 'Español',
     'dropzone.title': 'Arrastra archivos GIS aquí',
     'dropzone.subtitle': 'Soporta .geojson / .json / .zip / .shp. El hilo principal solo recibe y transfiere el archivo.',
+    'dropzone.selectLocal': 'Elegir archivo local',
+    'dropzone.opening': 'Abriendo...',
     'metadata.empty': 'Después de subir, el Worker devuelve un resumen Metadata ligero.',
     'loading.uploading': 'Leyendo el archivo y entregándolo al Worker...',
     'loading.metadata': 'Extrayendo capas, campos, CRS e información de codificación...',

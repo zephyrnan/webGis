@@ -9,6 +9,8 @@ export const ko = {
     'language.es': 'Español',
     'dropzone.title': 'GIS 파일을 여기에 드롭하세요',
     'dropzone.subtitle': '.geojson / .json / .zip / .shp 지원. 메인 스레드는 파일 수신 및 전달만 담당.',
+    'dropzone.selectLocal': '로컬 파일 선택',
+    'dropzone.opening': '여는 중...',
     'metadata.empty': '업로드 후 Worker가 경량 Metadata 요약을 반환합니다.',
     'loading.uploading': '파일을 읽고 Worker로 전달하는 중...',
     'loading.metadata': '레이어, 필드, CRS, 인코딩 정보를 추출하는 중...',

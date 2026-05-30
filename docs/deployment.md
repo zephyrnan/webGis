@@ -2,9 +2,11 @@
 
 ## 安全模型
 
-GeoSurgical WebGIS 是一个**纯前端应用**，没有后端服务器。所有 `VITE_*` 环境变量都会在构建时注入浏览器 JavaScript。
+GeoSurgical WebGIS 的 Web 版是一个**纯前端应用**，没有后端服务器。所有 `VITE_*` 环境变量都会在构建时注入浏览器 JavaScript。
 
-**生产规则**：不要在生产前端构建中使用远程 API key（OpenAI、DeepSeek、SiliconFlow 等）。生产环境应使用同一网络中的**本地 Ollama**，或使用后端代理把 API key 保留在服务端。
+**Web 生产规则**：不要在生产前端构建中使用远程 API key（OpenAI、DeepSeek、SiliconFlow 等）。生产环境应使用同一网络中的**本地 Ollama**，或使用后端代理把 API key 保留在服务端。
+
+Tauri 桌面版会通过 Rust 后端读取 `TAURI_LLM_*` 并代理 LLM 请求，避免 API key 出现在前端 JS bundle 和浏览器 Network 面板中。但桌面客户端隐藏 key 不是绝对安全；如果要分发给不可信用户，最终形态仍建议使用“桌面 App → 私有后端 → LLM Provider”。
 
 ## 快速开始（Docker Compose）
 
@@ -47,8 +49,28 @@ VITE_LLM_MODEL=llama3:8b docker compose up --build
 | `VITE_BRAIN_MODE` | 自动 | `mock` 或 `llm`。根据 endpoint 自动判断。 |
 | `VITE_LLM_ENDPOINT` | `http://localhost:11434` | 生产/私有化部署推荐的 Ollama API URL。Docker 内使用 `http://ollama:11434`。开发环境也可以指向 OpenAI-compatible endpoint，但生产应使用本地 Ollama 或后端代理。 |
 | `VITE_LLM_MODEL` | `qwen2.5:7b` | Ollama 使用的模型名。 |
+| `TAURI_LLM_ENDPOINT` | `http://localhost:11434` | Tauri 桌面端 Rust 后端读取的 LLM endpoint；开发模式从项目根目录 `.env` 读取。 |
+| `TAURI_LLM_MODEL` | `qwen2.5:7b` | Tauri 桌面端 Rust 后端使用的模型名。 |
+| `TAURI_LLM_API_KEY` | 空 | Tauri 桌面端 Rust 后端携带的远程 provider API key；不要用于分发给不可信用户的客户端。 |
 | `WEBGIS_PORT` | `8080` | WebGIS 容器暴露到宿主机的端口。 |
 | `OLLAMA_PORT` | `11434` | Ollama API 暴露到宿主机的端口。 |
+
+## 桌面端（Tauri v2）
+
+桌面端保留现有 Web Worker + Rust WASM GIS 处理链，只增加 Tauri 容器、原生文件选择和 Rust LLM 代理：
+
+```bash
+npm install
+npm run tauri:dev
+```
+
+构建桌面安装包：
+
+```bash
+npm run tauri:build
+```
+
+开发阶段的 Tauri LLM 代理读取项目根目录 `.env` 中的 `TAURI_LLM_ENDPOINT`、`TAURI_LLM_MODEL`、`TAURI_LLM_API_KEY`。原生文件选择通过 dialog 插件获取路径，再由自定义 `read_local_file` command 读取文件字节，不向前端开放宽泛文件系统权限。
 
 ## Ollama 模型管理
 

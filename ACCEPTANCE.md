@@ -47,6 +47,15 @@
 - [x] `MapPreview.tsx` 统一 OpenLayers Map / Overlay / Select 生命周期，避免重复 Select interaction。
 - [x] `src-wasm/src/dispatcher.rs` 已按职责机械拆分为 input、export、preview、util 和 ops 模块，`dispatcher::execute` 入口保持不变。
 
+## 2026-05-29 Tauri 迁移方案 A：桌面增强层
+
+- [x] 接入 Tauri v2 桌面壳，新增 `tauri`、`tauri:dev`、`tauri:build` 脚本。
+- [x] Tauri Rust 后端实现 `invoke_llm`，读取 `TAURI_LLM_*` 并兼容 Ollama / OpenAI-compatible 路由。
+- [x] Web 版 `llmBrain.ts` 保留原 fetch 逻辑；Tauri 环境通过 `invoke('invoke_llm')` 代理请求。
+- [x] Dropzone 保留 Web 拖拽/文件 input；Tauri 环境额外显示原生“选择本地文件”按钮。
+- [x] 原生文件选择只通过 dialog 获取路径，并由自定义 `read_local_file` command 读取受支持 GIS 文件字节。
+- [x] `.env.example`、README、部署文档和产品文档已同步桌面端安全边界。
+
 ## 不在当前范围内
 
 - 远程生产托管和自动化部署。
@@ -74,6 +83,13 @@
 
 - 状态：通过
 - 已验证命令：
+  - `npm run tauri:dev` — 通过，Tauri v2 首次编译完成并运行 `geosurgical-webgis-desktop.exe`（桌面增强层，2026-05-29）。
+  - `cargo check --manifest-path src-tauri/Cargo.toml` — 通过（Tauri Rust LLM 代理与文件读取 command，2026-05-29）。
+  - `npm run typecheck` — 通过（Tauri 前端适配，2026-05-29）。
+  - `npm run lint` — 通过（Tauri 前端适配，2026-05-29）。
+  - `npm test` — 通过，3 个文件 / 47 个测试（Tauri 前端适配，2026-05-29）。
+  - `npm run build` — 通过（Tauri 前端适配，2026-05-29）。
+  - `npm audit --registry https://registry.npmjs.org --audit-level=high` — 通过，0 vulnerabilities（Tauri 依赖接入，2026-05-29）。
   - `npm test` — 通过，3 个文件 / 47 个测试（阶段 1/2 改进，2026-05-29）。
   - `npm run typecheck` — 通过（阶段 1/2 改进，2026-05-29）。
   - `npm run lint` — 通过（阶段 1/2 改进，2026-05-29）。

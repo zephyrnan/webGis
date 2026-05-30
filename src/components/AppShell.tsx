@@ -7,6 +7,7 @@ import type { GeoLayer } from '../types/layer';
 import type { StructuredError } from '../types/protocol';
 import type { PersistedSession } from '../services/history';
 import { buildShortcutTags } from '../services/shortcutTags';
+import { isTauriRuntime } from '../services/tauriRuntime';
 import { LlmBrainGateway } from '../services/llmBrain';
 import type { BrainGateway } from '../services/brain';
 import { useGeoSurgicalWorker, type WorkerStatus } from '../hooks/useGeoSurgicalWorker';
@@ -31,8 +32,9 @@ const llmApiKey = import.meta.env.VITE_LLM_API_KEY as string | undefined;
 const llmModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
 const brainMode = import.meta.env.VITE_BRAIN_MODE as string | undefined;
 
-const brainGateway: BrainGateway | undefined = brainMode !== 'mock' && llmEndpoint
-  ? new LlmBrainGateway({ endpoint: llmEndpoint, apiKey: llmApiKey, model: llmModel ?? 'qwen2.5:7b' })
+const canUseTauriBrain = isTauriRuntime();
+const brainGateway: BrainGateway | undefined = brainMode !== 'mock' && (llmEndpoint || canUseTauriBrain)
+  ? new LlmBrainGateway({ endpoint: llmEndpoint ?? 'tauri://llm', apiKey: llmApiKey, model: llmModel ?? 'qwen2.5:7b' })
   : undefined;
 
 type AppShellState = {

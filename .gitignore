@@ -13,3 +13,4 @@ pnpm-debug.log*
 
 # Rust build artifacts
 src-wasm/target/
+src-tauri/target/

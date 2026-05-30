@@ -9,6 +9,8 @@ export const ja = {
     'language.es': 'Español',
     'dropzone.title': 'GIS ファイルをここにドロップ',
     'dropzone.subtitle': '.geojson / .json / .zip / .shp 対応。メインスレッドはファイルの受け渡しのみ。',
+    'dropzone.selectLocal': 'ローカルファイルを選択',
+    'dropzone.opening': '開いています...',
     'metadata.empty': 'アップロード後、Worker が軽量 Metadata サマリーを返します。',
     'loading.uploading': 'ファイルを読み込み、Worker に渡しています...',
     'loading.metadata': 'レイヤー、フィールド、CRS、エンコーディングを抽出しています...',

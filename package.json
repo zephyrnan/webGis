@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:tauri": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "docker:up": "docker-compose up --build -d && echo \"\n🚀 WebGIS 容器已成功启动！\n👉 请按住 Ctrl 并在浏览器打开: http://localhost:8080\n\"",
     "docker:down": "docker-compose down",
     "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -23,6 +27,8 @@
   "dependencies": {
     "@sentry/react": "^10.53.1",
     "@tailwindcss/vite": "^4.3.0",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
     "nanoid": "^5.1.11",
@@ -35,6 +41,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.60.0",
+    "@tauri-apps/cli": "^2.11.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

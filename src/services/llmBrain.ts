@@ -4,6 +4,7 @@ import type { BrainGateway } from './brain';
 import { BrainPlanningError } from './brain';
 import { validateAst } from './astValidation';
 import { AVAILABLE_ACTIONS, ACTION_NAMES } from './llmPrompt.generated';
+import { isTauriRuntime } from './tauriRuntime';
 
 const SYSTEM_PROMPT = `You are a REST API that outputs ONLY raw JSON. Do NOT wrap the JSON in markdown blocks (like \`\`\`json). Do NOT add any conversational text before or after the JSON. Your output must start with '{' and end with '}'.
 
@@ -45,6 +46,11 @@ ${AVAILABLE_ACTIONS}
     { "action": "export", "format": "geojson" }
   ]
 }`;
+
+type LlmMessage = {
+  role: 'system' | 'user';
+  content: string;
+};
 
 export interface LlmBrainConfig {
   endpoint: string;
@@ -189,6 +195,14 @@ export class LlmBrainGateway implements BrainGateway {
 
   private async callLlm(userMessage: string): Promise<string> {
     const { endpoint, apiKey, model, temperature } = this.config;
+    const messages: LlmMessage[] = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: userMessage },
+    ];
+
+    if (isTauriRuntime()) {
+      return this.callTauri(messages, temperature);
+    }
 
     const isOpenAiFormat = endpoint.includes('api.openai.com')
       || endpoint.includes('deepseek')
@@ -198,23 +212,29 @@ export class LlmBrainGateway implements BrainGateway {
       || endpoint.includes('v1/chat/completions');
 
     if (isOpenAiFormat) {
-      return this.callOpenAiFormat(endpoint, apiKey, model, temperature, userMessage);
+      return this.callOpenAiFormat(endpoint, apiKey, model, temperature, messages);
     }
 
     // Default: Ollama format
-    return this.callOllama(endpoint, model, temperature, userMessage);
+    return this.callOllama(endpoint, model, temperature, messages);
   }
 
-  private async callOllama(endpoint: string, model: string, temperature: number | undefined, userMessage: string): Promise<string> {
+  private async callTauri(messages: LlmMessage[], temperature: number | undefined): Promise<string> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<string>('invoke_llm', {
+      messages,
+      responseFormat: 'json',
+      temperature: temperature ?? 0.1,
+    });
+  }
+
+  private async callOllama(endpoint: string, model: string, temperature: number | undefined, messages: LlmMessage[]): Promise<string> {
     const response = await fetch(`${endpoint}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userMessage },
-        ],
+        messages,
         stream: false,
         format: 'json',
         options: { temperature: temperature ?? 0.1 },
@@ -230,19 +250,19 @@ export class LlmBrainGateway implements BrainGateway {
     return data.message?.content ?? '';
   }
 
-  private async callOpenAiFormat(endpoint: string, apiKey: string | undefined, model: string, temperature: number | undefined, userMessage: string): Promise<string> {
+  private async callOpenAiFormat(endpoint: string, apiKey: string | undefined, model: string, temperature: number | undefined, messages: LlmMessage[]): Promise<string> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    const url = endpoint.includes('/v1/chat/completions')
+      ? endpoint
+      : `${endpoint.replace(/\/$/, '')}/v1/chat/completions`;
 
-    const response = await fetch(`${endpoint}/v1/chat/completions`, {
+    const response = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify({
         model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userMessage },
-        ],
+        messages,
         temperature: temperature ?? 0.1,
         stream: false,
         response_format: { type: 'json_object' },
