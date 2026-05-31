@@ -14,3 +14,9 @@ pnpm-debug.log*
 # Rust build artifacts
 src-wasm/target/
 src-tauri/target/
+
+# Playwright test results
+test-results/
+
+# Large test data (>100MB)
+test-data/*.zip
