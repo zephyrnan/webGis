@@ -35,6 +35,7 @@
         { "$ref": "#/$defs/drop_empty" },
         { "$ref": "#/$defs/rename_field" },
         { "$ref": "#/$defs/transform_crs" },
+        { "$ref": "#/$defs/reproject" },
         { "$ref": "#/$defs/fix_encoding" },
         { "$ref": "#/$defs/simplify" },
         { "$ref": "#/$defs/field_calculate" },
@@ -104,6 +105,17 @@
         "to": { "type": "string", "enum": ["GCJ-02", "EPSG:4326", "EPSG:3857"], "description": "目标坐标系" }
       }
     },
+    "reproject": {
+      "type": "object",
+      "description": "通用坐标系转换（基于 EPSG 码，支持任意 proj4rs 兼容的坐标系对，如 UTM、LCC、Mercator 等）",
+      "required": ["action", "from_epsg", "to_epsg"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "const": "reproject" },
+        "from_epsg": { "type": "integer", "minimum": 1024, "maximum": 32767, "description": "源 EPSG 码，如 4326" },
+        "to_epsg": { "type": "integer", "minimum": 1024, "maximum": 32767, "description": "目标 EPSG 码，如 32650" }
+      }
+    },
     "fix_encoding": {
       "type": "object",
       "description": "编码修复（将属性值从源编码转换为 UTF-8）",
@@ -161,7 +173,7 @@
     },
     "clip": {
       "type": "object",
-      "description": "裁剪（按边界框裁剪，保留 bbox 内的要素）",
+      "description": "精确裁剪（对 Polygon/MultiPolygon 执行几何相交运算，输出被截断到 bbox 边界内）",
       "required": ["action", "bbox"],
       "additionalProperties": false,
       "properties": {
@@ -171,7 +183,7 @@
     },
     "intersect": {
       "type": "object",
-      "description": "相交（按边界框筛选，保留与 bbox 相交的要素）",
+      "description": "边界框筛选（保留与 bbox 相交的要素，不修改原始几何）",
       "required": ["action", "bbox"],
       "additionalProperties": false,
       "properties": {

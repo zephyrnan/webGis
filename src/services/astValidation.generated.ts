@@ -30,6 +30,11 @@ export const operationSchema = z.discriminatedUnion('action', [
     to: z.enum(["GCJ-02","EPSG:4326","EPSG:3857"]),
   }),
   z.object({
+    action: z.literal("reproject"),
+    from_epsg: z.number().int().min(1024),
+    to_epsg: z.number().int().min(1024),
+  }),
+  z.object({
     action: z.literal("fix_encoding"),
     from: z.string().min(1),
     to: z.enum(["utf-8"]),

@@ -10,6 +10,7 @@ export type Operation =
   | DropEmpty
   | RenameField
   | TransformCrs
+  | Reproject
   | FixEncoding
   | Simplify
   | FieldCalculate
@@ -116,6 +117,20 @@ export interface TransformCrs {
   to: "GCJ-02" | "EPSG:4326" | "EPSG:3857";
 }
 /**
+ * 通用坐标系转换（基于 EPSG 码，支持任意 proj4rs 兼容的坐标系对，如 UTM、LCC、Mercator 等）
+ */
+export interface Reproject {
+  action: "reproject";
+  /**
+   * 源 EPSG 码，如 4326
+   */
+  from_epsg: number;
+  /**
+   * 目标 EPSG 码，如 32650
+   */
+  to_epsg: number;
+}
+/**
  * 编码修复（将属性值从源编码转换为 UTF-8）
  */
 export interface FixEncoding {
@@ -189,7 +204,7 @@ export interface Buffer {
   segments?: number;
 }
 /**
- * 裁剪（按边界框裁剪，保留 bbox 内的要素）
+ * 精确裁剪（对 Polygon/MultiPolygon 执行几何相交运算，输出被截断到 bbox 边界内）
  */
 export interface Clip {
   action: "clip";
@@ -202,7 +217,7 @@ export interface Clip {
   bbox: [number, number, number, number];
 }
 /**
- * 相交（按边界框筛选，保留与 bbox 相交的要素）
+ * 边界框筛选（保留与 bbox 相交的要素，不修改原始几何）
  */
 export interface Intersect {
   action: "intersect";

@@ -38,7 +38,10 @@ export class MockBrainGateway implements BrainGateway {
     const operations: GeoSurgicalAst['operations'] = [];
     const fieldNames = new Set(input.metadata.fields.map((field) => field.name.toLowerCase()));
 
-    if (mentionsArea(normalized)) {
+    // Check rename BEFORE area filter — "将 area 改为 size" should be rename, not filter
+    const rename = extractRenameField(input.command, input.metadata);
+
+    if (!rename && mentionsArea(normalized)) {
       assertField(fieldNames, 'area');
       const value = normalized.includes('10') ? 10 : 0;
       const operator = mentionsLessThan(normalized) || (value === 0 && mentionsEqualToZero(normalized)) ? '>' : '>=';
@@ -71,6 +74,15 @@ export class MockBrainGateway implements BrainGateway {
         action: 'transform_crs',
         from: to === 'GCJ-02' ? (input.metadata.crs ?? 'EPSG:4326') : 'EPSG:4326',
         to,
+      });
+    }
+
+    const reproject = extractReproject(normalized);
+    if (reproject) {
+      operations.push({
+        action: 'reproject',
+        from_epsg: reproject.from,
+        to_epsg: reproject.to,
       });
     }
 
@@ -137,6 +149,14 @@ export class MockBrainGateway implements BrainGateway {
       if (field) {
         operations.push({ action: 'dissolve', field });
       }
+    }
+
+    if (rename) {
+      operations.push({
+        action: 'rename_field',
+        from: rename.from,
+        to: rename.to,
+      });
     }
 
     if (mentionsExport(normalized) || operations.length > 0) {
@@ -245,6 +265,45 @@ function detectCrsTarget(command: string): 'EPSG:3857' | 'EPSG:4326' | 'GCJ-02' 
   if (command.includes('火星') || /(?:to|into)\s+gcj[-\s]?02/.test(command)) return 'GCJ-02';
   if (command.includes('反纠偏') || command.includes('反向') || command.includes('4326')) return 'EPSG:4326';
   return 'GCJ-02';
+}
+
+/**
+ * Extract EPSG codes from commands like:
+ * - "转换到 EPSG:32650" / "转为 EPSG:32650" / "to EPSG:32650"
+ * - "EPSG:4326 转 EPSG:32650" / "from 4326 to 32650"
+ * Returns null if no EPSG reproject intent detected.
+ */
+function extractReproject(command: string): { from: number; to: number } | null {
+  // Only trigger on explicit EPSG reproject keywords, NOT on the general CRS transform keywords
+  const isReprojectIntent = command.includes('epsg')
+    || command.includes('utm')
+    || command.includes('reproject')
+    || command.includes('重投影')
+    || command.includes('转换到 epsg')
+    || command.includes('转为 epsg');
+
+  if (!isReprojectIntent) return null;
+
+  // Extract all EPSG codes from the command
+  const epsgMatches = command.match(/epsg[:\s]*(\d{4,5})/gi);
+  if (!epsgMatches || epsgMatches.length === 0) return null;
+
+  const codes = epsgMatches.map((m) => parseInt(m.replace(/epsg[:\s]*/i, ''), 10));
+
+  // Skip special EPSG codes handled by transform_crs (4326, 3857)
+  const specialCodes = new Set([4326, 3857]);
+
+  if (codes.length >= 2) {
+    // "EPSG:4326 to EPSG:32650"
+    return { from: codes[0], to: codes[1] };
+  }
+
+  if (codes.length === 1 && !specialCodes.has(codes[0])) {
+    // "转换到 EPSG:32650" → from = 4326 (default source), to = 32650
+    return { from: 4326, to: codes[0] };
+  }
+
+  return null;
 }
 
 function mentionsSimplify(command: string) {
@@ -377,6 +436,61 @@ function extractDissolveField(command: string, metadata: GeoSurgicalMetadata): s
   // Default fallback
   if (command.includes('name')) return 'name';
   if (metadata.fields.length > 0) return metadata.fields[0].name;
+  return null;
+}
+
+function mentionsRename(command: string): boolean {
+  return command.includes('重命名')
+    || command.includes('改名')
+    || command.includes('改为')
+    || command.includes('字段改名')
+    || command.includes('rename')
+    || command.includes('rename field');
+}
+
+function extractRenameField(
+  command: string,
+  metadata: GeoSurgicalMetadata,
+): { from: string; to: string } | null {
+  const normalized = command.trim().toLowerCase();
+  if (!mentionsRename(normalized)) return null;
+
+  const fieldNames = metadata.fields.map((f) => f.name);
+  const fieldPattern = fieldNames.map(escapeRegExp).join('|');
+
+  // Pattern 1: "把 X 改名为 Y" / "将 X 改为 Y" / "X 改名为 Y"
+  const zhMatch = command.match(
+    new RegExp(
+      `(?:把|将)?\\s*(${fieldPattern})\\s*(?:字段)?\\s*(?:重命名|改名|改名为|改为)\\s*(?:为)?\\s*(\\w+)`,
+      'i',
+    ),
+  );
+  if (zhMatch) {
+    return { from: zhMatch[1].trim(), to: zhMatch[2].trim() };
+  }
+
+  // Pattern 2: "重命名字段 X 为 Y" / "重命名 X 为 Y"
+  const zhPrefix = command.match(
+    new RegExp(
+      `重命名(?:字段)?\\s*(${fieldPattern})\\s*(?:为|改为|为)\\s*(\\w+)`,
+      'i',
+    ),
+  );
+  if (zhPrefix) {
+    return { from: zhPrefix[1].trim(), to: zhPrefix[2].trim() };
+  }
+
+  // Pattern 3: "rename X to Y" / "rename field X to Y"
+  const enMatch = command.match(
+    new RegExp(
+      `rename(?:\\s+field)?\\s+(${fieldPattern})\\s+to\\s+(\\w+)`,
+      'i',
+    ),
+  );
+  if (enMatch) {
+    return { from: enMatch[1].trim(), to: enMatch[2].trim() };
+  }
+
   return null;
 }
 

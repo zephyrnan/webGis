@@ -67,7 +67,11 @@ try {
 }
 
 // Extract the manually-maintained types (everything after the Operation enum)
-const manualTypesStart = existingContent.indexOf('\n#[derive(Debug, Clone, Serialize)]\npub struct GeoField');
+// Match any derive line before "pub struct GeoField"
+const geoFieldIdx = existingContent.indexOf('pub struct GeoField');
+const manualTypesStart = geoFieldIdx >= 0
+  ? existingContent.lastIndexOf('\n#[derive(', geoFieldIdx)
+  : -1;
 const manualTypes = manualTypesStart >= 0
   ? existingContent.slice(manualTypesStart)
   : `
@@ -137,7 +141,7 @@ pub struct LayerInfo {
     pub encoding: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurgerySummary {
     #[serde(rename = "inputFeatureCount")]
     pub input_feature_count: Option<usize>,
@@ -148,29 +152,29 @@ pub struct SurgerySummary {
     pub mock_mode: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurgeryResult {
     pub kind: String,
     #[serde(rename = "fileName")]
     pub file_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<serde_json::Value>,
-    #[serde(rename = "previewContent", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "previewContent", default, skip_serializing_if = "Option::is_none")]
     pub preview_content: Option<serde_json::Value>,
     pub summary: SurgerySummary,
     pub logs: Vec<String>,
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UndoCapability {
     pub available: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     pub strategy: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurgeryEnvelope {
     pub result: SurgeryResult,
     pub undo: UndoCapability,

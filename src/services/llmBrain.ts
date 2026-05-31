@@ -331,6 +331,16 @@ export class LlmBrainGateway implements BrainGateway {
       };
     }
 
+    if (action === 'reproject') {
+      const fromEpsg = typeof op.from_epsg === 'number' ? op.from_epsg : Number(op.from_epsg ?? 4326);
+      const toEpsg = typeof op.to_epsg === 'number' ? op.to_epsg : Number(op.to_epsg ?? 4326);
+      return {
+        action: 'reproject',
+        from_epsg: fromEpsg >= 1024 && fromEpsg <= 32767 ? fromEpsg : 4326,
+        to_epsg: toEpsg >= 1024 && toEpsg <= 32767 ? toEpsg : 4326,
+      };
+    }
+
     if (action === 'fix_encoding') {
       return {
         action: 'fix_encoding',
@@ -447,37 +457,112 @@ export class LlmBrainGateway implements BrainGateway {
   }
 
   private extractJsonObject(rawText: string): string {
-    let cleanText = rawText
-      .trim()
-      .replace(/```json/gi, '')
-      .replace(/```/g, '')
-      .trim();
-
-    const startIndex = cleanText.indexOf('{');
-    const endIndex = cleanText.lastIndexOf('}');
-
-    if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
-      throw new BrainPlanningError({
-        code: 'LLM_JSON_PARSE_ERROR',
-        message: '大模型返回内容中没有找到 JSON 对象。',
-        recoverable: true,
-        suggestedUserInput: '请重新生成 AST，或简化指令。',
-      });
+    // Strategy 1: Extract from ```json ... ``` code block (highest priority)
+    const codeBlockMatch = rawText.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      const inner = codeBlockMatch[1].trim();
+      if (inner.startsWith('{') || inner.startsWith('[')) {
+        return repairJson(inner);
+      }
     }
 
-    cleanText = cleanText.slice(startIndex, endIndex + 1).trim();
+    // Strategy 2: Find balanced { ... } using brace counting
+    const objStart = rawText.indexOf('{');
+    const arrStart = rawText.indexOf('[');
 
-    if (!cleanText.startsWith('{') || !cleanText.endsWith('}')) {
-      throw new BrainPlanningError({
-        code: 'LLM_JSON_PARSE_ERROR',
-        message: '大模型返回内容无法提取为完整 JSON 对象。',
-        recoverable: true,
-        suggestedUserInput: '请重新生成 AST，或切换 Mock 模式。',
-      });
+    // Determine which bracket type starts first
+    let start = -1;
+    let end = -1;
+    let openChar = '';
+    let closeChar = '';
+
+    if (objStart !== -1 && (arrStart === -1 || objStart < arrStart)) {
+      start = objStart;
+      openChar = '{';
+      closeChar = '}';
+    } else if (arrStart !== -1) {
+      start = arrStart;
+      openChar = '[';
+      closeChar = ']';
     }
 
-    return cleanText;
+    if (start !== -1) {
+      let depth = 0;
+      let inString = false;
+      let escape = false;
+      for (let i = start; i < rawText.length; i++) {
+        const ch = rawText[i];
+        if (escape) { escape = false; continue; }
+        if (ch === '\\') { escape = true; continue; }
+        if (ch === '"') { inString = !inString; continue; }
+        if (inString) continue;
+        if (ch === openChar) depth++;
+        if (ch === closeChar) {
+          depth--;
+          if (depth === 0) { end = i; break; }
+        }
+      }
+    }
+
+    if (start !== -1 && end !== -1 && end > start) {
+      const extracted = rawText.slice(start, end + 1).trim();
+      return repairJson(extracted);
+    }
+
+    throw new BrainPlanningError({
+      code: 'LLM_JSON_PARSE_ERROR',
+      message: '大模型返回内容中没有找到完整的 JSON 对象或数组。',
+      recoverable: true,
+      suggestedUserInput: '请重新生成 AST，或切换到 Mock 模式。',
+    });
   }
+}
+
+/**
+ * Repair common JSON formatting issues from LLM output:
+ * - Trailing commas before } or ]
+ * - Single quotes → double quotes (simple cases)
+ * - // and /* comments
+ * - Unquoted keys
+ */
+export function repairJson(raw: string): string {
+  let text = raw;
+
+  // Remove single-line comments: // ...
+  text = text.replace(/(?<!["\w])\/\/[^\n]*/g, '');
+  // Remove multi-line comments: /* ... */
+  text = text.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  // Replace single quotes with double quotes (outside of existing double-quoted strings)
+  // Simple heuristic: only replace ' when not inside a "..." string
+  text = replaceSingleQuotes(text);
+
+  // Remove trailing commas before } or ]
+  text = text.replace(/,(\s*[}\]])/g, '$1');
+
+  // Quote unquoted keys: { key: "value" } → { "key": "value" }
+  text = text.replace(/(?<=[{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g, '"$1":');
+
+  return text;
+}
+
+function replaceSingleQuotes(text: string): string {
+  let result = '';
+  let inDouble = false;
+  let escape = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { result += ch; escape = false; continue; }
+    if (ch === '\\') { result += ch; escape = true; continue; }
+    if (ch === '"') { inDouble = !inDouble; result += ch; continue; }
+    if (ch === "'" && !inDouble) {
+      result += '"';
+      continue;
+    }
+    result += ch;
+  }
+  return result;
 }
 
 export function createBrainGateway(config: Partial<LlmBrainConfig> & { mode?: 'llm' | 'mock' } = {}) {

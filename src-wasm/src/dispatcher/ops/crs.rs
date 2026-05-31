@@ -208,4 +208,92 @@ pub(crate) fn transform_geometry_gcj02_to_wgs84(geom: &mut geojson::Geometry) {
     }
 }
 
+// --- Generic CRS Reprojection (proj4rs + crs-definitions) ---
+
+pub(crate) fn apply_reproject(fc: &mut geojson::FeatureCollection, from_epsg: u32, to_epsg: u32) -> Result<(), String> {
+    use proj4rs::proj::Proj;
+
+    let from_code = u16::try_from(from_epsg)
+        .map_err(|_| format!("EPSG code out of range: {}", from_epsg))?;
+    let to_code = u16::try_from(to_epsg)
+        .map_err(|_| format!("EPSG code out of range: {}", to_epsg))?;
+
+    let from_def = crs_definitions::from_code(from_code)
+        .ok_or_else(|| format!("UNKNOWN_EPSG: {} is not a recognized EPSG code", from_epsg))?;
+    let to_def = crs_definitions::from_code(to_code)
+        .ok_or_else(|| format!("UNKNOWN_EPSG: {} is not a recognized EPSG code", to_epsg))?;
+
+    let from_proj = Proj::from_proj_string(from_def.proj4)
+        .map_err(|e| format!("Invalid source proj4 for EPSG:{}: {:?}", from_epsg, e))?;
+    let to_proj = Proj::from_proj_string(to_def.proj4)
+        .map_err(|e| format!("Invalid target proj4 for EPSG:{}: {:?}", to_epsg, e))?;
+
+    for feature in &mut fc.features {
+        if let Some(ref mut geom) = feature.geometry {
+            transform_geometry_reproject(geom, &from_proj, &to_proj);
+        }
+    }
+
+    Ok(())
+}
+
+fn transform_geometry_reproject(geom: &mut geojson::Geometry, from: &proj4rs::proj::Proj, to: &proj4rs::proj::Proj) {
+    use geojson::Value;
+    match &mut geom.value {
+        Value::Point(ref mut coords) => {
+            reproject_coord(coords, from, to);
+        }
+        Value::MultiPoint(ref mut coords) | Value::LineString(ref mut coords) => {
+            for c in coords.iter_mut() {
+                reproject_coord(c, from, to);
+            }
+        }
+        Value::MultiLineString(ref mut rings) | Value::Polygon(ref mut rings) => {
+            for ring in rings.iter_mut() {
+                for c in ring.iter_mut() {
+                    reproject_coord(c, from, to);
+                }
+            }
+        }
+        Value::MultiPolygon(ref mut polygons) => {
+            for polygon in polygons.iter_mut() {
+                for ring in polygon.iter_mut() {
+                    for c in ring.iter_mut() {
+                        reproject_coord(c, from, to);
+                    }
+                }
+            }
+        }
+        Value::GeometryCollection(ref mut geometries) => {
+            for g in geometries.iter_mut() {
+                transform_geometry_reproject(g, from, to);
+            }
+        }
+    }
+}
+
+fn reproject_coord(coords: &mut Vec<f64>, from: &proj4rs::proj::Proj, to: &proj4rs::proj::Proj) {
+    if coords.len() < 2 { return; }
+    // proj4rs expects radians for angular CRS, meters for projected CRS
+    let is_from_angular = is_angular_crs(from);
+    let is_to_angular = is_angular_crs(to);
+
+    let x = if is_from_angular { coords[0].to_radians() } else { coords[0] };
+    let y = if is_from_angular { coords[1].to_radians() } else { coords[1] };
+
+    let mut point = (x, y, 0.0);
+    if proj4rs::transform::transform(from, to, &mut point).is_err() {
+        return; // Skip this coordinate on error — leave unchanged
+    }
+
+    coords[0] = if is_to_angular { point.0.to_degrees() } else { point.0 };
+    coords[1] = if is_to_angular { point.1.to_degrees() } else { point.1 };
+}
+
+fn is_angular_crs(proj: &proj4rs::proj::Proj) -> bool {
+    // proj4rs stores the projection name; longlat/latlong are angular CRS
+    let name = proj.projname();
+    name == "longlat" || name == "latlong" || name == "latlon" || name == "lonlat"
+}
+
 // --- Buffer ---

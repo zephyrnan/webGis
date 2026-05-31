@@ -70,6 +70,27 @@ describe('MockBrainGateway', () => {
     expect(ast.operations).toContainEqual({ action: 'transform_crs', from: 'EPSG:4326', to: 'GCJ-02' });
   });
 
+  // --- reproject (generic EPSG) ---
+  it('recognizes EPSG reproject command: 转换到 EPSG:32650', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: '转换到 EPSG:32650，然后导出',
+      metadata,
+      schemaVersion: '1.0',
+    });
+
+    expect(ast.operations).toContainEqual({ action: 'reproject', from_epsg: 4326, to_epsg: 32650 });
+  });
+
+  it('recognizes EPSG:from to EPSG:to reproject command', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: 'reproject from EPSG:4326 to EPSG:32650',
+      metadata,
+      schemaVersion: '1.0',
+    });
+
+    expect(ast.operations).toContainEqual({ action: 'reproject', from_epsg: 4326, to_epsg: 32650 });
+  });
+
   // --- filter_area ---
   it('uses > operator for "删除 area 为 0" commands', async () => {
     const ast = await new MockBrainGateway().plan({
@@ -152,19 +173,7 @@ describe('MockBrainGateway', () => {
     ]);
   });
 
-  // --- rename_field ---
-  it('Mock Brain does not support rename_field, falls back to export-only', async () => {
-    const ast = await new MockBrainGateway().plan({
-      command: '把 name 字段改名为 label，导出',
-      metadata,
-      schemaVersion: '1.0',
-    });
-
-    // Mock Brain has no rename_field keyword matching; "导出" triggers export only
-    expect(ast.operations).toEqual([
-      { action: 'export', format: 'geojson' },
-    ]);
-  });
+  // --- rename_field (previously unsupported, now works) ---
 
   // --- export only ---
   it('recognizes export-only commands', async () => {
@@ -187,6 +196,67 @@ describe('MockBrainGateway', () => {
     });
 
     expect(ast.operations).toEqual([
+      { action: 'export', format: 'geojson' },
+    ]);
+  });
+
+  // --- rename_field ---
+  it('recognizes Chinese rename command: 把 name 改名为 label', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: '把 name 改名为 label',
+      metadata,
+      schemaVersion: '1.0',
+    });
+    expect(ast.operations).toEqual([
+      { action: 'rename_field', from: 'name', to: 'label' },
+      { action: 'export', format: 'geojson' },
+    ]);
+  });
+
+  it('recognizes Chinese rename command: 将 area 改为 size', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: '将 area 改为 size',
+      metadata,
+      schemaVersion: '1.0',
+    });
+    expect(ast.operations).toEqual([
+      { action: 'rename_field', from: 'area', to: 'size' },
+      { action: 'export', format: 'geojson' },
+    ]);
+  });
+
+  it('recognizes English rename command: rename name to label', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: 'rename name to label',
+      metadata,
+      schemaVersion: '1.0',
+    });
+    expect(ast.operations).toEqual([
+      { action: 'rename_field', from: 'name', to: 'label' },
+      { action: 'export', format: 'geojson' },
+    ]);
+  });
+
+  it('recognizes English rename field command: rename field area to size', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: 'rename field area to size',
+      metadata,
+      schemaVersion: '1.0',
+    });
+    expect(ast.operations).toEqual([
+      { action: 'rename_field', from: 'area', to: 'size' },
+      { action: 'export', format: 'geojson' },
+    ]);
+  });
+
+  it('rename with 字段 suffix: 重命名字段 name 为 title', async () => {
+    const ast = await new MockBrainGateway().plan({
+      command: '重命名字段 name 为 title',
+      metadata,
+      schemaVersion: '1.0',
+    });
+    expect(ast.operations).toEqual([
+      { action: 'rename_field', from: 'name', to: 'title' },
       { action: 'export', format: 'geojson' },
     ]);
   });

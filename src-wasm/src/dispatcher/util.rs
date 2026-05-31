@@ -7,6 +7,7 @@ pub(crate) fn operation_name(op: &Operation) -> &str {
         Operation::DropEmpty { .. } => "drop_empty",
         Operation::RenameField { .. } => "rename_field",
         Operation::TransformCrs { .. } => "transform_crs",
+        Operation::Reproject { .. } => "reproject",
         Operation::FixEncoding { .. } => "fix_encoding",
         Operation::Simplify { .. } => "simplify",
         Operation::FieldCalculate { .. } => "field_calculate",

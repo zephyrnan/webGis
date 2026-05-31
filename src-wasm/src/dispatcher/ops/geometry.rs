@@ -106,6 +106,48 @@ pub(crate) fn buffer_polygon_rings(rings: &[Vec<Vec<f64>>], distance: f64, segme
 
 // --- Clip / Intersect bbox check ---
 
+/// Clip a GeoJSON geometry to a bounding box.
+/// - Polygon/MultiPolygon: uses BooleanOps::intersection for true geometric clipping
+/// - Point/LineString/MultiPoint: retains features whose bbox intersects the clip bbox
+pub(crate) fn clip_geometry_to_bbox(geom: &geojson::Geometry, bbox: &[f64; 4]) -> Option<geojson::Geometry> {
+    use geojson::Value;
+    use geo::BooleanOps;
+    use geo::{Coord, LineString, Polygon, MultiPolygon};
+
+    // Build the clip rectangle as a geo::MultiPolygon
+    let clip_rect = MultiPolygon(vec![Polygon::new(
+        LineString::new(vec![
+            Coord { x: bbox[0], y: bbox[1] },
+            Coord { x: bbox[2], y: bbox[1] },
+            Coord { x: bbox[2], y: bbox[3] },
+            Coord { x: bbox[0], y: bbox[3] },
+            Coord { x: bbox[0], y: bbox[1] },
+        ]),
+        vec![],
+    )]);
+
+    match &geom.value {
+        Value::Polygon(_) | Value::MultiPolygon(_) => {
+            let Some(input_mp) = geojson_to_geo_polygon(geom) else {
+                return None;
+            };
+            let clipped = input_mp.intersection(&clip_rect);
+            if clipped.0.is_empty() {
+                return None;
+            }
+            geo_to_geojson_polygon(&clipped)
+        }
+        // Non-polygon types: fall back to bbox-intersects check (keep or discard whole feature)
+        _ => {
+            if geojson_bbox_intersects(geom, bbox) {
+                Some(geom.clone())
+            } else {
+                None
+            }
+        }
+    }
+}
+
 pub(crate) fn geojson_bbox_intersects(geom: &geojson::Geometry, bbox: &[f64; 4]) -> bool {
     let Some(geom_bbox) = geojson_geometry_bbox(geom) else { return false; };
     // Check if bounding boxes overlap

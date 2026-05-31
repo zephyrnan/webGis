@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useMemo, useReducer } from 'react';
+import { Suspense, lazy, useCallback, useMemo, useReducer, useState } from 'react';
 import { StopCircle } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import type { Language } from '../i18n/locales';
@@ -10,6 +10,8 @@ import { buildShortcutTags } from '../services/shortcutTags';
 import { isTauriRuntime } from '../services/tauriRuntime';
 import { LlmBrainGateway } from '../services/llmBrain';
 import type { BrainGateway } from '../services/brain';
+import { type LlmConfig, loadLlmConfig } from '../services/llmConfig';
+import { LlmSettings } from './LlmSettings';
 import { useGeoSurgicalWorker, type WorkerStatus } from '../hooks/useGeoSurgicalWorker';
 import { useBatchProcessor } from '../hooks/useBatchProcessor';
 import { AstPreview } from './AstPreview';
@@ -26,16 +28,22 @@ import { ShortcutTags } from './ShortcutTags';
 
 const MapPreview = lazy(() => import('./MapPreview').then(m => ({ default: m.MapPreview })));
 
-const llmEndpoint = import.meta.env.VITE_LLM_ENDPOINT as string | undefined;
-// SECURITY: VITE_LLM_API_KEY is embedded in frontend JS. Use a backend proxy for production.
-const llmApiKey = import.meta.env.VITE_LLM_API_KEY as string | undefined;
-const llmModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
-const brainMode = import.meta.env.VITE_BRAIN_MODE as string | undefined;
+function buildBrainGateway(config: LlmConfig): BrainGateway | undefined {
+  const canUseTauriBrain = isTauriRuntime();
 
-const canUseTauriBrain = isTauriRuntime();
-const brainGateway: BrainGateway | undefined = brainMode !== 'mock' && (llmEndpoint || canUseTauriBrain)
-  ? new LlmBrainGateway({ endpoint: llmEndpoint ?? 'tauri://llm', apiKey: llmApiKey, model: llmModel ?? 'qwen2.5:7b' })
-  : undefined;
+  if (config.provider === 'mock') {
+    // Tauri brain takes priority if available
+    return canUseTauriBrain ? new LlmBrainGateway({ endpoint: 'tauri://llm' }) : undefined;
+  }
+
+  if (!config.endpoint && !canUseTauriBrain) return undefined;
+
+  return new LlmBrainGateway({
+    endpoint: config.endpoint || 'tauri://llm',
+    apiKey: config.apiKey || undefined,
+    model: config.model || 'qwen2.5:7b',
+  });
+}
 
 type AppShellState = {
   command: string;
@@ -166,6 +174,9 @@ export function AppShell() {
     layerExpanded,
   } = state;
 
+  const [llmConfig, setLlmConfig] = useState<LlmConfig>(loadLlmConfig);
+  const brainGateway = useMemo(() => buildBrainGateway(llmConfig), [llmConfig]);
+
   const shortcutTags = useMemo(
     () => worker.metadata ? buildShortcutTags(worker.metadata, language) : [],
     [worker.metadata, language],
@@ -238,6 +249,7 @@ export function AppShell() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <LlmSettings onChange={setLlmConfig} />
           <select
             aria-label="Language"
             className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-[11px] text-zinc-600 outline-none transition hover:border-zinc-400 focus:border-zinc-400"

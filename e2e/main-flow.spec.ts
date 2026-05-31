@@ -62,12 +62,14 @@ test.describe('GeoSurgical main flow', () => {
   test('language switch works', async ({ page }) => {
     await page.goto('/');
 
+    const langSelect = page.getByLabel('Language');
+
     // Switch to English
-    await page.getByRole('button', { name: 'English' }).click();
+    await langSelect.selectOption('en');
     await expect(page.getByText(/Language-driven|operating table/)).toBeVisible();
 
     // Switch back to Chinese
-    await page.getByRole('button', { name: '中文' }).click();
+    await langSelect.selectOption('zh');
     await expect(page.getByText(/语言驱动|手术台/)).toBeVisible();
   });
 

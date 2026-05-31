@@ -24,6 +24,9 @@ export function BatchPanel({ batch, onCancel, onClear, onItemClick }: BatchPanel
           {t('batch.title')}
           <span className="ml-1.5 text-[10px] text-zinc-400">
             {doneCount}/{batch.items.length}
+            {batch.running && batch.concurrency > 1 && (
+              <span className="ml-1 text-zinc-500">({batch.concurrency}x)</span>
+            )}
             {errorCount > 0 && <span className="ml-1 text-red-500">({errorCount} {t('batch.failed')})</span>}
           </span>
         </h3>
@@ -60,9 +63,9 @@ export function BatchPanel({ batch, onCancel, onClear, onItemClick }: BatchPanel
         </div>
       )}
 
-      <ul className="max-h-40 space-y-0.5 overflow-y-auto pr-1">
+      <ul className="max-h-48 space-y-0.5 overflow-y-auto pr-1">
         {batch.items.map((item) => (
-          <li key={item.id}>
+          <li key={item.id} className="relative">
             <button
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] transition hover:bg-zinc-100 disabled:cursor-default disabled:opacity-50"
               type="button"
@@ -73,12 +76,23 @@ export function BatchPanel({ batch, onCancel, onClear, onItemClick }: BatchPanel
               <span className={`flex-1 truncate ${item.status === 'error' ? 'text-red-500' : 'text-zinc-500'}`}>
                 {item.fileName}
               </span>
+              {item.status === 'processing' && item.progress?.percent != null && (
+                <span className="text-[9px] tabular-nums text-zinc-400">{item.progress.percent}%</span>
+              )}
               {item.error && (
                 <span className="max-w-[120px] truncate text-[9px] text-red-500" title={item.error}>
                   {item.error}
                 </span>
               )}
             </button>
+            {item.status === 'processing' && item.progress?.percent != null && (
+              <div className="absolute bottom-0 left-2 right-2 h-px overflow-hidden rounded-full bg-zinc-200">
+                <div
+                  className="h-full bg-blue-500 transition-all duration-200"
+                  style={{ width: `${item.progress.percent}%` }}
+                />
+              </div>
+            )}
           </li>
         ))}
       </ul>

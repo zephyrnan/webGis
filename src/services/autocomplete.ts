@@ -12,6 +12,7 @@ const OPERATIONS: Suggestion[] = [
   { label: 'drop_empty', kind: 'operation', insertText: 'drop_empty' },
   { label: 'rename_field', kind: 'operation', insertText: 'rename_field' },
   { label: 'transform_crs', kind: 'operation', insertText: 'transform_crs' },
+  { label: 'reproject', kind: 'operation', insertText: 'reproject' },
   { label: 'fix_encoding', kind: 'operation', insertText: 'fix_encoding' },
   { label: 'simplify', kind: 'operation', insertText: 'simplify' },
   { label: 'field_calculate', kind: 'operation', insertText: 'field_calculate' },

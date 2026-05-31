@@ -1,12 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import type { GeoSurgicalAst } from '../types/ast';
-import type { SurgeryResult } from '../types/protocol';
+import type { SurgeryResult, ProgressEvent } from '../types/protocol';
+import { WorkerPool, type BatchTaskInput } from '../workers/workerPool';
 
 export type BatchItem = {
   id: string;
   fileName: string;
   status: 'pending' | 'processing' | 'done' | 'error';
+  progress?: ProgressEvent;
   result?: SurgeryResult;
   error?: string;
 };
@@ -15,119 +17,86 @@ export type BatchState = {
   items: BatchItem[];
   currentIndex: number;
   running: boolean;
+  concurrency: number;
 };
 
 export function useBatchProcessor() {
-  const [batch, setBatch] = useState<BatchState>({ items: [], currentIndex: -1, running: false });
-  const workerRef = useRef<Worker | null>(null);
-  const cancelRef = useRef(false);
+  const [batch, setBatch] = useState<BatchState>({ items: [], currentIndex: -1, running: false, concurrency: 1 });
+  const poolRef = useRef<WorkerPool | null>(null);
 
   const startBatch = useCallback(async (files: File[], ast: GeoSurgicalAst) => {
-    cancelRef.current = false;
+    const pool = new WorkerPool();
+    poolRef.current = pool;
+
     const items: BatchItem[] = files.map((f) => ({
       id: nanoid(),
       fileName: f.name,
       status: 'pending' as const,
     }));
-    setBatch({ items, currentIndex: 0, running: true });
 
-    for (let i = 0; i < files.length; i++) {
-      if (cancelRef.current) break;
+    setBatch({ items, currentIndex: 0, running: true, concurrency: pool.concurrency });
 
-      setBatch((prev) => ({ ...prev, currentIndex: i }));
-      setBatch((prev) => ({
-        ...prev,
-        items: prev.items.map((item, idx) => idx === i ? { ...item, status: 'processing' } : item),
-      }));
+    const inputs: BatchTaskInput[] = items.map((item, i) => ({
+      id: item.id,
+      file: files[i],
+    }));
 
-      try {
-        const result = await processFile(files[i], ast, () => cancelRef.current);
-        if (cancelRef.current) break;
+    await new Promise<void>((resolveAll) => {
+      let completed = 0;
 
-        setBatch((prev) => ({
-          ...prev,
-          items: prev.items.map((item, idx) => idx === i ? { ...item, status: 'done', result } : item),
-        }));
-      } catch (err) {
-        setBatch((prev) => ({
-          ...prev,
-          items: prev.items.map((item, idx) => idx === i ? {
-            ...item,
-            status: 'error',
-            error: err instanceof Error ? err.message : String(err),
-          } : item),
-        }));
-      }
-    }
+      pool.processAll(
+        inputs,
+        ast,
+        // onProgress
+        (taskId, update) => {
+          if (!update.progress) return;
+          setBatch((prev) => ({
+            ...prev,
+            items: prev.items.map((it) =>
+              it.id === taskId ? { ...it, status: 'processing', progress: update.progress } : it
+            ),
+          }));
+        },
+        // onFileDone
+        (taskId, result) => {
+          setBatch((prev) => ({
+            ...prev,
+            items: prev.items.map((it) =>
+              it.id === taskId ? { ...it, status: 'done', result, progress: undefined } : it
+            ),
+          }));
+          completed++;
+          if (completed >= files.length) resolveAll();
+        },
+        // onFileError
+        (taskId, error) => {
+          setBatch((prev) => ({
+            ...prev,
+            items: prev.items.map((it) =>
+              it.id === taskId ? { ...it, status: 'error', error, progress: undefined } : it
+            ),
+          }));
+          completed++;
+          if (completed >= files.length) resolveAll();
+        },
+      );
+    });
 
     setBatch((prev) => ({ ...prev, running: false }));
+    poolRef.current = null;
   }, []);
 
   const cancelBatch = useCallback(() => {
-    cancelRef.current = true;
-    workerRef.current?.terminate();
-    workerRef.current = null;
+    poolRef.current?.cancel();
+    poolRef.current = null;
     setBatch((prev) => ({ ...prev, running: false }));
   }, []);
 
   const clearBatch = useCallback(() => {
-    setBatch({ items: [], currentIndex: -1, running: false });
+    poolRef.current?.cancel();
+    poolRef.current = null;
+    setBatch({ items: [], currentIndex: -1, running: false, concurrency: 1 });
   }, []);
 
   return { batch, startBatch, cancelBatch, clearBatch };
-}
-
-function processFile(file: File, ast: GeoSurgicalAst, isCancelled: () => boolean): Promise<SurgeryResult> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('../workers/geosurgical.worker.ts', import.meta.url), { type: 'module' });
-
-    const timeout = setTimeout(() => {
-      worker.terminate();
-      reject(new Error('Processing timeout'));
-    }, 5 * 60 * 1000);
-
-    worker.onmessage = (event) => {
-      const response = event.data;
-      if (isCancelled()) {
-        worker.terminate();
-        clearTimeout(timeout);
-        reject(new Error('Cancelled'));
-        return;
-      }
-      if (response.type === 'RESULT_READY') {
-        worker.terminate();
-        clearTimeout(timeout);
-        resolve(response.result);
-      }
-      if (response.type === 'ERROR') {
-        worker.terminate();
-        clearTimeout(timeout);
-        reject(new Error(response.error.message));
-      }
-    };
-
-    worker.onerror = (event) => {
-      worker.terminate();
-      clearTimeout(timeout);
-      reject(new Error(event.message));
-    };
-
-    // Upload file first, then execute AST
-    void file.arrayBuffer().then((buffer) => {
-      const taskId = nanoid();
-      worker.postMessage(
-        { type: 'UPLOAD_FILE', taskId, fileName: file.name, fileSize: file.size, buffer },
-        [buffer],
-      );
-
-      // Wait for metadata before executing
-      const metaHandler = (e: MessageEvent) => {
-        if (e.data.type === 'METADATA_READY') {
-          worker.removeEventListener('message', metaHandler);
-          worker.postMessage({ type: 'EXECUTE_AST', taskId, ast });
-        }
-      };
-      worker.addEventListener('message', metaHandler);
-    });
-  });
 }
