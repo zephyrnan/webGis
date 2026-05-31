@@ -144,3 +144,35 @@
   - P3.1（LLM 安全策略）、P3.2（部署）、P3.3 部分（TS 类型生成）已完成。
   - 生产可用性检查已添加 ErrorBoundary、CSP、依赖固定、GitHub Actions CI、可选 Sentry、可访问性属性和 Vite 手动分包。
   - 2026-05-28 文档同步已更新 README、`.env.example`、ROADMAP、ACCEPTANCE、BUGS，覆盖 SiliconFlow、CSP、操作历史地图快照修复。
+
+## 2026-05-31 工程能力增强
+
+- [x] P0.1 Rust 单元测试：新增 68 个测试，覆盖全部 17 个 AST 操作、CRS 数学、几何工具函数、DBF 解析、输入解析
+- [x] P0.2 E2E 测试接入 CI：GitHub Actions 新增 Playwright job（11 个测试，chromium）
+- [x] P0.3 集成测试覆盖：新增 28 个测试（Brain→Validation 管道、IndexedDB CRUD、模板导入导出）
+- [x] P1.3 Mock Brain rename_field：中英文 5 种模式关键词匹配，新增 5 个测试
+- [x] P2.2 LLM 解析健壮性：平衡括号提取 + repairJson（注释、trailing comma、单引号），新增 27 个测试
+- [x] P3.2 LLM 模型选择器：UI 设置面板（Provider/Endpoint/Model/API Key），保存到 localStorage，6 语言 i18n
+- [x] P2.1 Worker Pool 并行化：基于 hardwareConcurrency 的 Worker 池，自动重试，逐文件进度条，新增 3 个测试
+- [x] P1.1 真正多边形裁剪：clip 使用 BooleanOps::intersection，intersect 保留 bbox 筛选，新增 3 个 Rust 测试
+- [x] P1.2 通用 CRS 转换 (reproject)：基于 proj4rs + crs-definitions，支持任意 EPSG 码，20+ 投影，新增 6 个 Rust 测试 + 2 个 Mock Brain 测试
+- [x] 项目文件整理：删除 TODO.md，文档移至 docs/，WASM pkg 不再跟踪
+- [x] Tauri 桌面端打包：生成 MSI/NSIS 安装包
+- [x] README 重写：更新功能特性、技术栈、AST 操作表、测试数据、部署说明
+
+### 验证命令
+
+- `cargo test --manifest-path src-wasm/Cargo.toml` — 通过，68 个测试
+- `npm test` — 通过，6 个文件 / 111 个测试
+- `npm run typecheck` — 通过
+- `npm run lint` — 通过
+- `npm run build` — 通过
+- `npm run tauri:build` — 通过，生成 MSI (4.7MB) + NSIS (3.4MB) 安装包
+- Playwright E2E — 11 个测试已接入 CI
+
+### 测试统计
+
+- Rust 单元测试：68 个
+- TypeScript 测试：111 个
+- E2E 测试：11 个
+- 合计：190 个（之前 57 个）

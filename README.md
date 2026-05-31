@@ -1,307 +1,214 @@
 # GeoSurgical WebGIS
 
-GeoSurgical WebGIS 是一个由自然语言驱动的空间数据处理工作台。用户可以上传 GIS 文件，在浏览器本地查看元数据，用自然语言描述清洗、转换或导出需求，审查生成的 GeoSurgical AST，通过 Web Worker 中的 Rust WASM 引擎执行操作，在地图上预览结果并导出文件。
+自然语言驱动的空间数据处理工作台。上传 GIS 文件，用自然语言描述清洗/转换/导出需求，系统编译为可审计 AST，通过 Rust WASM 引擎在浏览器本地执行。
 
-## 功能概览
+## 功能特性
 
-- 支持上传 `.geojson`、`.json` 和 `.zip` Shapefile 文件。
-- 上传文件的 `ArrayBuffer` 会转交给 Web Worker，避免重型解析阻塞 React 主线程。
-- 通过 Rust WASM 提取元数据，并提供 TypeScript Mock WASM 回退。
-- 根据元数据、CRS、字段、图层和警告生成快捷命令标签。
-- 支持 Mock Brain 或可配置 LLM Brain，将自然语言命令转换为 GeoSurgical AST。
-- 使用 TypeScript / Zod 白名单校验 AST，再交给 Worker 执行。
-- Rust WASM 支持过滤、字段清理、CRS 转换、编码修复、简化、字段计算、几何校验、缓冲区、裁剪、相交、融合和导出。
-- 使用 OpenLayers 预览 GeoJSON 输出，支持 WebGL / Canvas 切换、要素弹窗和属性表。
-- 大数据结果可使用轻量凸包预览，避免一次性渲染过多要素。
-- 使用 Blob URL 下载结果，减少大型 JSON 重序列化。
-- 支持 GeoJSON 和 CSV 多格式导出。
-- 支持基于 IndexedDB 的任务历史，可恢复、删除和回放历史会话。
-- 支持 AST 流水线模板的保存、加载、导出和导入。
-- 支持批处理：对多个文件执行同一套 AST 流水线，并显示逐文件进度。
-- 提供数据质量报告：要素数量变化、编码修复、几何问题和警告。
-- 支持 6 种界面语言：中文、英文、日文、韩文、法文、西班牙文。
-- 使用 React ErrorBoundary 保护应用级和地图渲染错误。
-- 核心控件覆盖基础可访问性：表单标签、切换状态、折叠状态、键盘可操作表格排序等。
-- 生产硬化：CSP 配置、可选 Sentry 监控、GitHub Actions CI，以及 React / OpenLayers / Zod / Sentry 手动分包。
+**核心能力**
+- 支持 `.geojson`、`.json`、ZIP Shapefile 上传，`ArrayBuffer` 转交 Web Worker 处理
+- Rust WASM 引擎提取元数据 + 执行 17 种 AST 操作
+- 17 种操作：过滤、重命名、CRS 转换、通用重投影、编码修复、简化、字段计算、几何校验、缓冲区、精确裁剪、边界框筛选、融合、导出等
+- Mock Brain 或可配置 LLM Brain（Ollama / OpenAI-compatible / SiliconFlow）
+- UI 中可切换 LLM Provider、Endpoint、Model、API Key（保存到 localStorage）
+
+**数据管理**
+- IndexedDB 任务历史：恢复、删除、回放
+- AST 模板：保存、加载、导出、导入
+- 批处理：Worker Pool 并发执行多文件，逐文件进度条
+- 多格式导出：GeoJSON / CSV / Shapefile ZIP
+
+**界面**
+- OpenLayers 地图：WebGL/Canvas 切换、要素弹窗、属性表、透明度滑块
+- 大数据凸包预览，避免一次性渲染过多要素
+- 6 种语言：中文 / English / 日本語 / 한국어 / Français / Español
+- 三栏工作台布局（上传/图层 · 地图 · 命令/AST/历史）
+
+**工程**
+- Schema 驱动四端自动生成（JSON Schema → TS/Zod/Rust/Prompt）
+- LLM 解析容错：处理 markdown 代码块、trailing comma、注释、单引号等
+- React ErrorBoundary + CSP + 可选 Sentry + GitHub Actions CI（4 job）
+- Docker + Nginx 容器化部署
+- Tauri v2 桌面端（原生文件对话框 + Rust LLM 代理）
 
 ## 技术栈
 
-- Vite + React + TypeScript
-- Tailwind CSS
-- OpenLayers
-- Web Worker API + Transferable Objects
-- Rust + wasm-bindgen + `geo` / `geojson` / `shapefile` / `zip` / `encoding_rs`
-- Zod
-- Sentry React SDK（可选，通过 DSN 控制）
-- Vitest、Playwright 脚本、GitHub Actions CI
+| 层 | 技术 |
+|---|---|
+| 前端 | Vite 8 + React 19 + TypeScript + Tailwind CSS 4 |
+| 地图 | OpenLayers 10 |
+| 校验 | Zod 4 + JSON Schema |
+| 计算引擎 | Rust WASM (geo 0.28 + proj4rs + shapefile + encoding_rs) |
+| 桌面 | Tauri v2 |
+| 测试 | Vitest + Playwright + cargo test |
+| 部署 | Docker + Nginx + GitHub Actions CI |
 
-## 架构概览
+## 架构
 
 ```text
-React UI 主线程
-  h-screen 三栏工作台（grid-cols-12）
-  左侧 3 栏：文件上传 / 图层树 / 批处理
-  中间 5 栏：OpenLayers 地图画布
-  右侧 4 栏：命令面板 / AST 预览 / 历史 / 结果
-        |
-        | Transferable ArrayBuffer + AST 消息
-        v
-Web Worker
-  任务上下文持有上传文件 buffer
-        |
-        v
+React UI (三栏工作台)
+  │
+  │ Transferable ArrayBuffer + AST 消息
+  ▼
+Web Worker Pool (并发度 = min(4, cores-1))
+  │
+  ▼
 Rust WASM 引擎
-  提取元数据 -> 执行 GeoSurgical AST -> 返回 envelope + payload
+  元数据提取 → AST 执行 → envelope + payload
 ```
 
 核心约束：
+- React 主线程不解压/解析 GIS 二进制
+- LLM Brain 只接收元数据摘要，不接收几何数据
+- 所有操作先编译为 JSON AST，校验后执行
+- `schemas/ast-schema.json` 是 AST 唯一事实来源
 
-- React 主线程不能解压或解析大型 GIS 二进制文件。
-- 上传文件转交后由 Worker 持有文件 buffer。
-- LLM Brain 只接收元数据摘要和用户命令，不接收完整几何数据。
-- 所有操作必须先表现为可审计的 JSON AST，再执行。
-- `schemas/ast-schema.json` 是 AST 类型的唯一事实来源。修改后运行 `npm run generate:types` 重新生成 TypeScript 类型。
-
-## 本地启动
+## 快速开始
 
 ### 前置要求
 
-- Node.js 与 npm
-- Rust 工具链与 Cargo
-- 可选：重建 `src-wasm/pkg` 时需要 `wasm-pack`
-- 可选：本地 Ollama 或 OpenAI-compatible endpoint，用于真实 LLM Brain 模式
+- Node.js + npm
+- Rust 工具链 (cargo)
+- 可选：`wasm-pack`（重建 WASM）
+- 可选：Ollama 或 OpenAI-compatible LLM endpoint
 
-### 安装依赖
+### 安装与运行
 
 ```bash
 npm install
+npm run dev
 ```
 
 ### 环境变量
 
-如果要配置 LLM 模式，将 `.env.example` 复制为 `.env`。`.env` 和 `.env.*` 已被 Git 忽略，只有 `.env.example` 会保留在仓库中。
+复制 `.env.example` 为 `.env`（已被 git 忽略）：
 
-**安全提示**：这是纯前端应用，所有 `VITE_*` 变量都会在构建时注入浏览器 JavaScript。生产环境不要直接使用远程 API key。生产推荐使用本地 Ollama，或用后端代理把 API key 留在服务端。
+| 变量 | 说明 |
+|---|---|
+| `VITE_BRAIN_MODE` | `mock`（默认）或 `llm` |
+| `VITE_LLM_ENDPOINT` | LLM 端点，如 `http://localhost:11434` |
+| `VITE_LLM_MODEL` | 模型名，如 `qwen2.5:7b` |
+| `VITE_SENTRY_DSN` | Sentry 错误监控（可选） |
 
-| 变量名 | 是否必填 | 说明 |
-| --- | --- | --- |
-| `VITE_BRAIN_MODE` | 否 | `mock` 或 `llm`；控制 Mock Brain 与配置的 LLM Brain。 |
-| `VITE_LLM_ENDPOINT` | 否 | LLM 端点，例如本地 Ollama `http://localhost:11434`，或开发时使用 OpenAI / DeepSeek / ModelScope / SiliconFlow 等 OpenAI-compatible endpoint。 |
-| `VITE_LLM_API_KEY` | 否 | OpenAI-compatible provider 的 API key；本地 Ollama 不需要。生产前端构建中不要使用真实远程 API key。 |
-| `VITE_LLM_MODEL` | 否 | LLM Brain 使用的模型名。 |
-| `VITE_SENTRY_DSN` | 否 | 提供后启用 Sentry 前端错误监控。 |
+> 也可以在 UI 右上角 ⚙️ 设置中配置 LLM，保存到 localStorage，无需重启。
 
-#### 开发环境使用远程 OpenAI-compatible LLM
+### 快速演示
 
-本地开发时如果要使用 SiliconFlow 等远程兼容服务，可以这样修改 `.env`：
+1. 上传 `.geojson` 文件
+2. 输入命令，如 `删除 name 为空的要素，然后导出 GeoJSON`
+3. 点击"生成 AST"→ 检查 JSON → "确认执行"
+4. 地图预览结果 → 下载
 
-```env
-VITE_BRAIN_MODE=llm
-VITE_LLM_ENDPOINT=https://api.siliconflow.cn
-VITE_LLM_API_KEY=your-api-key-here
-VITE_LLM_MODEL=deepseek-ai/DeepSeek-V4-Flash
-```
+## AST 操作
 
-修改 `.env` 后必须重启 Vite dev server，因为 Vite 会在启动时读取 `VITE_*` 变量：
-
-```bash
-npm run dev
-```
-
-当前 OpenAI-compatible endpoint 自动识别包含：OpenAI、DeepSeek、ModelScope、SiliconFlow，以及显式包含 `/v1/chat/completions` 的 endpoint。如果新增远程 provider，需要同步检查 `index.html` 和 `nginx.conf` 中 CSP `connect-src` 白名单。
-
-不要把真实远程 API key 放入公开生产前端构建。生产请使用后端代理或本地 Ollama。
-
-### 运行开发服务器
-
-```bash
-npm run dev
-```
-
-## 快速演示
-
-1. 启动开发服务器后打开 Vite 输出的本地地址。
-2. 上传一个小型 `.geojson`、`.json` 或 ZIP Shapefile 文件；首次上传会显示文件读取和 Metadata skeleton。
-3. 等左侧 Metadata 面板出现字段、图层、CRS 和编码摘要后，在右侧命令框输入示例命令。
-4. 点击“生成 AST”，检查生成的 JSON 操作链，再点击“确认执行”。
-5. 在地图中审阅结果，必要时打开属性表，最后从结果面板下载 GeoJSON 或复制 CSV。
-
-可用于演示的命令示例：
-
-```text
-删除 name 字段为空的要素，然后导出 GeoJSON
-只保留 name 包含 Beijing 的要素，然后导出 GeoJSON
-把结果导出为 CSV
-修复编码乱码，然后导出 GeoJSON
-转换为 Web Mercator 坐标并导出 GeoJSON
-```
-
-### Mock Brain 与 LLM Brain
-
-- Mock Brain 适合离线演示、单元测试和固定示例命令，依赖关键词规则，不能代表完整自然语言理解能力。
-- LLM Brain 适合真实自然语言规划，但依赖本地 Ollama 或 OpenAI-compatible endpoint 的可用性和模型输出质量。
-- 生产或公开交付时推荐本地 Ollama 或后端代理，不要把真实远程 API key 放入前端构建。
-
-### 构建
-
-```bash
-npm run build
-```
-
-### 桌面端运行（Tauri v2）
-
-Tauri 桌面端是现有 WebGIS 的增强容器，不替代 Web Worker + Rust WASM 的 GIS 处理链。Web 版仍可继续使用 `npm run dev` 和 `npm run build`。
-
-```bash
-npm run tauri:dev
-```
-
-桌面端增强能力：
-
-- 使用 Tauri Rust 后端代理 LLM 请求，读取 `.env` 中的 `TAURI_LLM_ENDPOINT`、`TAURI_LLM_MODEL`、`TAURI_LLM_API_KEY`，避免 API key 注入前端 JS bundle。
-- 在保留拖拽上传的同时，Tauri 环境会额外显示原生“选择本地文件”按钮。
-- 原生文件选择使用 dialog 插件获取路径，再通过自定义 `read_local_file` command 读取字节，不向前端开放宽泛文件系统权限。
-
-开发阶段 Tauri Rust 后端基于 `src-tauri` 的 `CARGO_MANIFEST_DIR` 定位并读取项目根目录 `.env`。如果未来正式分发桌面应用，建议把配置迁移到用户级配置目录或改为 `Tauri App → 私有后端服务 → LLM Provider`，不要把商业 API key 内置到发给不可信用户的客户端。
-
-桌面端常用命令：
-
-```bash
-npm run tauri:dev
-npm run tauri:build
-```
-
-### 使用 Docker Desktop 运行
-
-确保 Docker Desktop 已启动，然后构建并启动容器：
-
-```powershell
-docker compose up --build
-```
-
-打开 `http://localhost:8080` 查看应用。
-
-常用 Docker 命令：
-
-```powershell
-# 只构建生产镜像
-docker compose build
-
-# 后台启动
-docker compose up -d
-
-# 查看日志
-docker compose logs -f webgis
-
-# 停止并删除容器
-docker compose down
-```
-
-默认 Docker 构建使用 Mock Brain，容器不依赖 LLM 服务。如果要用 LLM 模式，可在 Compose 前设置构建变量：
-
-```powershell
-$env:VITE_BRAIN_MODE="llm"
-$env:VITE_LLM_ENDPOINT="http://localhost:11434"
-$env:VITE_LLM_MODEL="qwen2.5:7b"
-docker compose up --build
-```
-
-Vite 的 `VITE_*` 环境变量是在构建时注入的。如果修改 `.env` 或 shell 环境变量，需要重新执行 `docker compose up --build`。
-
-不要在生产构建的前端 `VITE_*` 变量中放私有 API key。
-
-### 重建 Rust WASM
-
-```bash
-cd src-wasm
-wasm-pack build --target web --release
-```
+| Action | 说明 |
+|---|---|
+| `filter_area` | 按数值字段过滤 |
+| `filter_attribute` | 按文本属性过滤（== / != / contains） |
+| `drop_empty` | 删除空值要素 |
+| `rename_field` | 重命名字段 |
+| `transform_crs` | 固定 CRS 转换（WGS84 ↔ GCJ-02 / EPSG:3857） |
+| `reproject` | 通用 CRS 转换（任意 EPSG 码，基于 proj4rs） |
+| `fix_encoding` | 编码修复（encoding_rs 转码） |
+| `simplify` | 几何简化（RDP / VW） |
+| `field_calculate` | 字段计算（add/subtract/multiply/divide） |
+| `validate_geometry` | 几何校验与修复 |
+| `buffer` | 缓冲区 |
+| `clip` | 精确裁剪（BooleanOps::intersection） |
+| `intersect` | 边界框筛选 |
+| `dissolve` | 按字段融合 |
+| `export` | 导出（geojson / csv） |
+| `noop` | 占位 |
+| `need_clarification` | 需要补充信息 |
 
 ## 常用脚本
 
 | 命令 | 说明 |
-| --- | --- |
-| `npm run dev` | 启动 Vite 开发服务器。 |
-| `npm run build` | 执行 TypeScript 项目构建和 Vite 生产构建。 |
-| `npm run preview` | 预览生产构建产物。 |
-| `npm run tauri:dev` | 启动 Tauri v2 桌面开发应用。 |
-| `npm run tauri:build` | 构建 Tauri 桌面应用安装包。 |
-| `npm test` | 运行 Vitest 单元测试。 |
-| `npm run test:watch` | 以 watch 模式运行 Vitest。 |
-| `npm run test:e2e` | 运行 Playwright 端到端测试。 |
-| `npm run typecheck` | 运行 TypeScript 项目检查。 |
-| `npm run lint` | 运行 ESLint。 |
-| `npm run generate:types` | 根据 `schemas/ast-schema.json` 生成 TypeScript 类型。 |
-| `cargo check --manifest-path src-wasm/Cargo.toml` | 检查 Rust WASM crate。 |
-| `docker compose up --build` | 构建并在 8080 端口运行生产静态应用。 |
-| `docker compose down` | 停止并删除本地 Docker 容器。 |
+|---|---|
+| `npm run dev` | 启动开发服务器 |
+| `npm run build` | 生产构建 |
+| `npm test` | 运行测试 (Vitest) |
+| `npm run test:e2e` | Playwright E2E 测试 |
+| `npm run typecheck` | TypeScript 类型检查 |
+| `npm run lint` | ESLint |
+| `npm run generate:all` | 从 Schema 生成 TS/Zod/Rust/Prompt |
+| `npm run tauri:dev` | Tauri 桌面端开发 |
+| `npm run tauri:build` | 构建 Tauri 安装包 (.msi / .exe) |
+| `docker compose up --build` | Docker 容器化运行 |
 
-## 支持的 AST 操作
+## 测试
 
-| Action | 用途 |
-| --- | --- |
-| `filter_area` | 按数值字段、操作符和值过滤要素。 |
-| `filter_attribute` | 按文本属性字段过滤或保留要素，支持 `==`、`!=`、`contains`。 |
-| `drop_empty` | 删除指定字段为空的要素。 |
-| `rename_field` | 重命名属性字段。 |
-| `transform_crs` | 转换支持的 CRS，例如 WGS84 / GCJ-02 / Web Mercator。 |
-| `fix_encoding` | 使用指定源编码重新解码 DBF 文本。 |
-| `simplify` | 按容差简化支持的几何。 |
-| `field_calculate` | 根据数值操作数计算目标字段。 |
-| `validate_geometry` | 检查或修复简单的无效几何。 |
-| `buffer` | 创建近似缓冲区几何。 |
-| `clip` | 保留与 bbox 相交的要素。 |
-| `intersect` | 保留与 bbox 相交的要素。 |
-| `dissolve` | 按字段值融合多边形要素。 |
-| `export` | 导出结果。 |
-| `noop` / `need_clarification` | 表示不支持或含糊的规划输出。 |
+| 类型 | 数量 | 工具 |
+|---|---|---|
+| Rust 单元测试 | 68 | cargo test |
+| TypeScript 测试 | 111 | Vitest |
+| E2E 测试 | 11 | Playwright (CI) |
+| **合计** | **190** | |
 
-## 验证状态
+CI 流水线 (GitHub Actions):
+```
+lint + typecheck + unit tests → build ──→ E2E (Playwright)
+Rust cargo check + cargo test ────────────┘
+```
 
-最新验收状态记录在 `ACCEPTANCE.md`。
+## 桌面端 (Tauri v2)
 
-2026-05-28 已验证：
+```bash
+npm run tauri:dev     # 开发
+npm run tauri:build   # 打包 → src-tauri/target/release/bundle/
+```
 
-- `npm run generate:all` — 通过，已从 Schema 生成 TypeScript、Zod、Rust 和 LLM Prompt 派生产物。
-- `npm test` — 通过，3 个文件 / 47 个测试，覆盖 `filter_attribute` AST 校验和 Mock Brain 文本属性过滤识别。
-- `npm run typecheck` — 通过，覆盖 `filter_attribute` 全链路类型更新。
-- `cargo check --manifest-path src-wasm/Cargo.toml` — 通过，Rust WASM dispatcher 文本属性过滤分支编译通过。
-- `npm run build` — 通过，生产构建可用。
-- `npm run typecheck` — 通过，覆盖 SiliconFlow endpoint / CSP / 操作历史地图同步修复。
-- `npm run build` — 通过，覆盖 SiliconFlow endpoint / CSP / 操作历史地图同步修复。
-- CSP 已在 `index.html` 和 `nginx.conf` 中允许 SiliconFlow 开发请求。
-- 操作历史快照已改为保存稳定 GeoJSON 内容，不再依赖可撤销 Blob URL。
+打包后生成：
+- `bundle/msi/*.msi` — Windows 安装包（推荐分发）
+- `bundle/nsis/*-setup.exe` — NSIS 安装包
 
-2026-05-26 已验证：
-
-- `npm run typecheck` — 通过。
-- `npm test` — 通过，45 个测试。
-- `npm run lint` — 通过。
-- `npm run build` — 通过，并拆分 React / OpenLayers / Zod / Sentry chunk。
-- 核心可访问性检查已完成：标签控件、toggle / disclosure 状态、历史按钮、地图弹窗关闭、属性表排序。
-
-生产使用前仍建议用代表性的 GeoJSON 和 ZIP Shapefile 样例做手动浏览器验证。
+桌面端增强：
+- Rust 后端代理 LLM 请求（API key 不注入前端 JS）
+- 原生文件选择对话框
+- `read_local_file` command 读取文件字节
 
 ## 项目文档
 
-- `产品蓝图.md` — 架构与产品蓝图。
-- `DESIGN.md` — UI 方向与组件规则。
-- `ACCEPTANCE.md` — MVP 范围和验收状态。
-- `BUGS.md` — 问题历史、验证发现和解决记录。
-- `ROADMAP.md` — 产品路线图和完成状态。
-- `docs/deployment.md` — Docker Compose 与 Ollama 私有化部署指南。
+| 文件 | 说明 |
+|---|---|
+| `DESIGN.md` | UI 设计规范 |
+| `ACCEPTANCE.md` | 验收标准与状态 |
+| `BUGS.md` | 问题记录与修复历史 |
+| `docs/deployment.md` | Docker + Ollama 部署指南 |
+| `docs/PRODUCT_DOCUMENTATION.md` | 产品文档 |
+| `docs/EXTENSION_GUIDE.md` | 扩展方向与工程准则 |
 
-## 部署说明
+## 部署
 
-当前仓库未配置远程生产部署目标。可以运行 `npm run build`，然后将生成的 `dist` 目录部署到支持 Worker modules 和 WASM 资源的静态托管服务。
+### 静态托管
 
-如需本地容器化预览，可使用仓库内的 `Dockerfile`、`nginx.conf` 和 `docker-compose.yml`，由 Docker Desktop 构建 Vite 应用并用 Nginx 托管 `dist`。
+```bash
+npm run build
+# 将 dist/ 部署到支持 WASM 的静态托管服务
+```
+
+### Docker
+
+```bash
+docker compose up --build
+# 访问 http://localhost:8080
+```
+
+### Tauri 桌面
+
+```bash
+npm run tauri:build
+# 分发 src-tauri/target/release/bundle/msi/*.msi
+```
 
 ## 已知限制
 
-- 大型 ZIP Shapefile 工作流在生产使用前应使用代表性文件验证。
-- 真实 LLM 模式依赖 endpoint 可达性和模型行为；远程 OpenAI-compatible provider 支持开发调试，但生产应使用本地 Ollama 或后端代理，避免 API key 暴露在浏览器 JavaScript 中。
-- 2026-05-28 Blob URL 快照修复前创建的操作历史可能不包含稳定 GeoJSON 内容；重新测试地图同步前建议清空或重新生成旧 IndexedDB 历史。
-- 真正的多边形裁剪/相交能力仍弱于完整桌面 GIS 引擎。
+- 大型 ZIP Shapefile 生产使用前需用代表性文件验证
+- LLM 模式依赖 endpoint 可达性和模型输出质量
+- 通用 CRS 转换基于 proj4rs，覆盖 20+ 投影，不及 PROJ C 库完整
+- 2026-05-28 前创建的 IndexedDB 历史可能缺少稳定 GeoJSON 内容
 
-详细问题历史和当前验证备注见 `BUGS.md`。
+详细问题记录见 [BUGS.md](BUGS.md)。
+
+## License
+
+MIT
