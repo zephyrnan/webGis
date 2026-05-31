@@ -144,7 +144,7 @@ Vite transform 中间件在编译期将 `@wasm/geosurgical` 解析为绝对路�
 
 - 状态： 已修复
 - 日期： 2026-05-18
-- 参考： EXTENSION_GUIDE.md §4.1 — "Worker 返回 WASM 加载失败的具体错误"
+- 参考： docs/EXTENSION_GUIDE.md §4.1 — "Worker 返回 WASM 加载失败的具体错误"
 - 场景： 真实 WASM 加载失败（路径错误、打包缺失、浏览器不支持等），Worker 静默回退到 Mock。
 - 现象： `catch` 块吞掉错误，用户和开发者无法得知 WASM 失败原因。
 - 影响： Mock 模式误用时无法定位根因。
@@ -165,7 +165,7 @@ Vite transform 中间件在编译期将 `@wasm/geosurgical` 解析为绝对路�
 
 - 状态： 已完成
 - 日期： 2026-05-18
-- 参考： EXTENSION_GUIDE.md §6 阶段 B
+- 参考： docs/EXTENSION_GUIDE.md §6 阶段 B
 
 ### B1: DBF Header LDID 编码推断
 
@@ -240,7 +240,7 @@ Vite transform 中间件在编译期将 `@wasm/geosurgical` 解析为绝对路�
 
 - 状态： 已完成
 - 日期： 2026-05-19
-- 参考： EXTENSION_GUIDE.md §6 阶段 C
+- 参考： docs/EXTENSION_GUIDE.md §6 阶段 C
 
 ### C1: buffer 缓冲区
 
