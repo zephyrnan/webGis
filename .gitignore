@@ -13,7 +13,6 @@ pnpm-debug.log*
 
 # Rust build artifacts
 src-wasm/target/
-src-wasm/pkg/
 src-tauri/target/
 
 # Playwright test results
